@@ -156,16 +156,25 @@ def send_email(to_email, subject, body):
     is logged to the server console instead of sent, so the password-reset
     flow can still be tested end-to-end — check your server logs for the
     reset link. Set the SMTP_* env vars for this to actually deliver mail."""
+    print(f"[SEND-EMAIL] Called for {to_email}", flush=True)
     smtp_host = os.environ.get('SMTP_HOST')
     smtp_port = int(os.environ.get('SMTP_PORT', 587))
     smtp_user = os.environ.get('SMTP_USER')
     smtp_password = os.environ.get('SMTP_PASSWORD')
     smtp_from = os.environ.get('SMTP_FROM', smtp_user)
 
+    print(
+        f"[SEND-EMAIL] SMTP_HOST={'SET' if smtp_host else 'MISSING'} "
+        f"SMTP_PORT={smtp_port} "
+        f"SMTP_USER={'SET' if smtp_user else 'MISSING'} "
+        f"SMTP_PASSWORD={'SET' if smtp_password else 'MISSING'}",
+        flush=True
+    )
+
     if not (smtp_host and smtp_user and smtp_password):
-        print(f"[✉️ DEV MODE — SMTP not configured] Would email {to_email}:")
-        print(f"    Subject: {subject}")
-        print(f"    {body}")
+        print(f"[✉️ DEV MODE — SMTP not configured] Would email {to_email}:", flush=True)
+        print(f"    Subject: {subject}", flush=True)
+        print(f"    {body}", flush=True)
         return
 
     try:
@@ -177,8 +186,9 @@ def send_email(to_email, subject, body):
             smtp.starttls()
             smtp.login(smtp_user, smtp_password)
             smtp.sendmail(smtp_from, [to_email], msg.as_string())
+        print(f"[SEND-EMAIL] ✅ Successfully sent to {to_email}", flush=True)
     except Exception as e:
-        print(f"❌ Failed to send email to {to_email}: {e}")
+        print(f"❌ Failed to send email to {to_email}: {e}", flush=True)
 
 
 try:
@@ -410,16 +420,19 @@ def login_user():
 # --- PASSWORD RESET ROUTES ---
 @app.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
+    print("[FORGOT-PASSWORD] Route hit", flush=True)
     if db is None:
         return jsonify({'error': 'Database not connected. Check MONGO_URI.'}), 500
     try:
         data = request.get_json() or {}
         email = (data.get('email') or '').strip().lower()
+        print(f"[FORGOT-PASSWORD] Email received: {email}", flush=True)
 
         if not email:
             return jsonify({'error': 'Please enter your email.'}), 400
 
         user = db.users.find_one({'email': email})
+        print(f"[FORGOT-PASSWORD] User found in DB: {bool(user)}", flush=True)
         if user:
             raw_token = secrets.token_urlsafe(32)
             # Store only a hash of the token, never the raw value — same
