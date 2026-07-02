@@ -59,7 +59,7 @@ class MultimodalService:
 
         base_dir = os.path.dirname(os.path.abspath(__file__))
         semantic_model_path = os.path.join(base_dir, 'models', 'disaster_pro_model_BEST.pt')
-        forensic_model_path = os.path.join(base_dir, 'models', 'forensic_v2_model_BEST.pt')
+        forensic_model_path = os.path.join(base_dir, 'models', 'forensic_v3_model_BEST.pt')
 
         try:
             self.semantic_model = DisasterDetector(num_classes=2).to(device)

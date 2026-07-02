@@ -45,7 +45,7 @@ def download_weights():
     # (data/0, data/1, ..., version, .data/serialization_id) instead of
     # producing a usable .pt file. So these are stored and pulled as raw
     # files on the Hub — no extraction step needed.
-    for pt_filename in ["disaster_pro_model_BEST.pt", "forensic_v2_model_BEST.pt"]:
+    for pt_filename in ["disaster_pro_model_BEST.pt", "forensic_v3_model_BEST.pt"]:
         target_path = os.path.join(TARGET_DIR, pt_filename)
         if os.path.exists(target_path):
             print(f"[OK] {pt_filename} already present — skipping download.")
