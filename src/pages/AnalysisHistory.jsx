@@ -17,10 +17,13 @@ import { getVerdictCategory, getVerdictColor, SCORE_THRESHOLDS } from '../utils/
 const AnalysisHistory = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
 
+  const PAGE_SIZE = 20;
   const COLORS = ['#10b981', '#ef4444', '#9ca3af'];
 
   const getApiBase = () =>
@@ -32,30 +35,32 @@ const AnalysisHistory = () => {
     headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
   });
 
-  // ── FETCH ────────────────────────────────────────────────────────────────
+  const buildHistoryUrl = (skip) => {
+    const userString = localStorage.getItem('user');
+    let url = `${getApiBase()}/api/v1/analysis-history?limit=${PAGE_SIZE}&skip=${skip}`;
+    if (userString) {
+      try {
+        const user = JSON.parse(userString);
+        if (user && user.id && user.role !== 'admin') {
+          url += `&user_id=${user.id}`;
+        }
+        // Admins get no user_id filter — every record in the database.
+      } catch (e) {
+        console.error("Error parsing user for history query:", e);
+      }
+    }
+    return url;
+  };
+
+  // ── FETCH (first page / refresh) ────────────────────────────────────────
   const fetchHistory = async (signal) => {
     setLoading(true);
     try {
-      const userString = localStorage.getItem('user');
-      let url = `${getApiBase()}/api/v1/analysis-history`;
-      if (userString) {
-        try {
-          const user = JSON.parse(userString);
-          if (user && user.id && user.role !== 'admin') {
-            url += `?user_id=${user.id}&limit=20`;
-          } else {
-            url += `?limit=20`;
-          }
-        } catch (e) {
-          console.error("Error parsing user for history query:", e);
-        }
-      }
-      const response = await axios.get(url, {
-        signal,
-        ...authHeader()
-      });
+      const response = await axios.get(buildHistoryUrl(0), { signal, ...authHeader() });
       const data = Array.isArray(response.data) ? response.data : [];
       setHistory(data);
+      const totalHeader = response.headers?.['x-total-count'];
+      setTotalCount(totalHeader ? parseInt(totalHeader, 10) : data.length);
     } catch (err) {
       if (axios.isCancel(err) || err?.name === 'CanceledError') return;
       console.error("Connection Error:", err.message);
@@ -65,11 +70,57 @@ const AnalysisHistory = () => {
     }
   };
 
+  // ── FETCH (next page — infinite scroll) ─────────────────────────────────
+  const fetchMore = async () => {
+    if (loadingMore || history.length >= totalCount) return;
+    setLoadingMore(true);
+    try {
+      const response = await axios.get(buildHistoryUrl(history.length), authHeader());
+      const data = Array.isArray(response.data) ? response.data : [];
+      setHistory(prev => {
+        // Avoid duplicate rows if a poll refresh and a scroll-load land close together
+        const existingIds = new Set(prev.map(item => item.id || item._id));
+        const merged = [...prev, ...data.filter(item => !existingIds.has(item.id || item._id))];
+        return merged;
+      });
+      const totalHeader = response.headers?.['x-total-count'];
+      if (totalHeader) setTotalCount(parseInt(totalHeader, 10));
+    } catch (err) {
+      console.error("Load more failed:", err.message);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     fetchHistory(controller.signal);
-    return () => controller.abort();
+
+    // Poll for newly added analyses every 15s so the list reflects new
+    // scans without a manual refresh. Only refreshes the first page —
+    // scroll-loaded pages stay as-is, so we don't yank the user's scroll
+    // position around while they're browsing further down.
+    const pollId = setInterval(() => {
+      fetchHistory(controller.signal);
+    }, 15000);
+
+    return () => {
+      controller.abort();
+      clearInterval(pollId);
+    };
   }, []);
+
+  // ── INFINITE SCROLL ──────────────────────────────────────────────────────
+  useEffect(() => {
+    const handleScroll = () => {
+      const nearBottom =
+        window.innerHeight + window.scrollY >= document.body.offsetHeight - 400;
+      if (nearBottom) fetchMore();
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [history, totalCount, loadingMore]);
 
   // ── DELETE LOGIC ─────────────────────────────────────────────────────────
   const deleteOne = async (id) => {
@@ -445,6 +496,24 @@ const AnalysisHistory = () => {
                 })}
               </tbody>
             </table>
+
+            {!loading && (
+              <div className="py-8 text-center">
+                {loadingMore ? (
+                  <span className="text-[11px] font-black text-blue-400/60 uppercase tracking-widest animate-pulse">
+                    Loading more records...
+                  </span>
+                ) : history.length < totalCount ? (
+                  <span className="text-[11px] font-medium text-white/20">
+                    Showing {history.length} of {totalCount} — scroll for more
+                  </span>
+                ) : history.length > 0 ? (
+                  <span className="text-[11px] font-medium text-white/20">
+                    Showing all {totalCount} records
+                  </span>
+                ) : null}
+              </div>
+            )}
           </div>
         </div>
 

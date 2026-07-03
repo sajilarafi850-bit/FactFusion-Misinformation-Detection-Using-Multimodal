@@ -73,25 +73,28 @@ const Dashboard = () => {
 
   useEffect(() => {
     const controller = new AbortController();
-    const fetchData = async () => {
+    const fetchData = async (signal) => {
       try {
         const userString = localStorage.getItem('user');
         const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://inas-00-factfusion-backend.hf.space';
         let url = `${apiBase}/api/v1/analysis-history`;
+        // Dashboard stats need the FULL dataset, not a page of it — 100000
+        // is effectively "no limit" for this app's realistic scale, since
+        // the backend no longer hard-caps at 50.
         if (userString) {
           try {
             const user = JSON.parse(userString);
             if (user && user.id && user.role !== 'admin') {
-              url += `?user_id=${user.id}&limit=50`;
+              url += `?user_id=${user.id}&limit=100000`;
             } else {
-              url += `?limit=50`;
+              url += `?limit=100000`;
             }
           } catch (e) {
             console.error("Error parsing user for dashboard query:", e);
           }
         }
         const response = await axios.get(url, {
-          signal: controller.signal,
+          signal,
           headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
         });
         setData(Array.isArray(response.data) ? response.data : []);
@@ -102,8 +105,19 @@ const Dashboard = () => {
         setLoading(false);
       }
     };
-    fetchData();
-    return () => controller.abort();
+
+    fetchData(controller.signal);
+
+    // Poll for newly added analyses every 15s so the dashboard reflects new
+    // scans without the admin needing to refresh the page manually.
+    const pollId = setInterval(() => {
+      fetchData(controller.signal);
+    }, 15000);
+
+    return () => {
+      controller.abort();
+      clearInterval(pollId);
+    };
   }, []);
 
   // --- Multi-Modal Threat Logic ---
