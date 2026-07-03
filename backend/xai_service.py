@@ -4,6 +4,12 @@ import numpy as np
 
 
 class XAIEngine:
+    # How many top-weighted tokens to return for the SHAP/heuristic text
+    # attribution chart. Was hardcoded to 6 in two places — raised so the
+    # frontend has enough tokens to show a fuller picture of the model's
+    # reasoning, especially on longer disaster reports.
+    TOP_N_TOKENS = 15
+
     def __init__(self, text_model=None, image_model=None, tokenizer=None, background_tensor=None):
         self.text_model  = text_model
         self.image_model = image_model
@@ -193,13 +199,13 @@ class XAIEngine:
                     if t not in ["<s>", "</s>", "<pad>", "<unk>"]
                 ]
                 print("[XAI] Text attributions generated via SHAP")
-                return sorted(result, key=lambda x: abs(x["weight"]), reverse=True)[:6]
+                return sorted(result, key=lambda x: abs(x["weight"]), reverse=True)[:self.TOP_N_TOKENS]
             except Exception as e:
                 print(f"[XAI] Text SHAP failed: {e} — falling back to heuristic")
 
         # PATH 2 — your original heuristic (completely unchanged)
         if self.text_model is None:
-            return [{"token": word, "weight": 0.5} for word in text.split()[:6]]
+            return [{"token": word, "weight": 0.5} for word in text.split()[:self.TOP_N_TOKENS]]
 
         inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
 
@@ -232,4 +238,4 @@ class XAIEngine:
             for a in attributions:
                 a["weight"] = round(a["weight"] / max_w, 3)
 
-        return sorted(attributions, key=lambda x: x["weight"], reverse=True)[:6]
+        return sorted(attributions, key=lambda x: x["weight"], reverse=True)[:self.TOP_N_TOKENS]
