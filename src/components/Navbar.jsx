@@ -47,7 +47,7 @@ const Navbar = () => {
 
   return (
     <nav className="w-full fixed top-0 z-50 backdrop-blur-xl bg-[#020617]/70 border-b border-blue-500/10">
-      <div className="max-w-7xl mx-auto px-6 h-24 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-6 min-h-24 py-3 flex items-center justify-between flex-wrap gap-y-2">
 
         {/* --- Logo Branding --- */}
         <div className="flex items-center gap-3 group cursor-default">
@@ -64,12 +64,12 @@ const Navbar = () => {
         </div>
 
         {/* --- Central Navigation Links --- */}
-        <div className="hidden md:flex items-center gap-8 text-md font-medium text-blue-100/50">
+        <div className="hidden md:flex items-center gap-4 lg:gap-8 text-sm font-medium text-blue-100/50">
           {visibleNavOptions.map((option) => (
             <Link
               key={option.name}
               to={option.path}
-              className={`hover:text-blue-400 transition-all duration-300 relative group ${location.pathname === option.path ? 'text-white font-semibold' : ''
+              className={`whitespace-nowrap hover:text-blue-400 transition-all duration-300 relative group ${location.pathname === option.path ? 'text-white font-semibold' : ''
                 }`}
             >
               {option.name}
@@ -83,13 +83,13 @@ const Navbar = () => {
         <div className="flex items-center gap-4">
 
           {user ? (
-            <div className="flex items-center gap-3 pl-4 md:border-l md:border-white/10">
+            <div className="flex flex-col-reverse items-end gap-2 lg:flex-row lg:items-center lg:gap-3 pl-4 md:border-l md:border-white/10">
               {/* Who's logged in + role — pulled from the same user object stored at login */}
               <div
                 className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 min-w-0"
                 title={user.email}
               >
-                <span className="text-blue-100/70 text-sm font-medium max-w-[120px] lg:max-w-[180px] truncate">
+                <span className="text-blue-100/70 text-sm font-medium max-w-[160px] lg:max-w-[180px] truncate">
                   {user.email}
                 </span>
                 {user.role === 'admin' ? (
@@ -103,22 +103,24 @@ const Navbar = () => {
                 )}
               </div>
 
-              {/* This Button dynamically redirects based on role */}
-              <Link
-                to={getDashboardLink()}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm shadow-lg shadow-blue-900/40 transition-all transform hover:scale-105 active:scale-95"
-              >
-                <LayoutDashboard size={16} />
-                <span>Dashboard</span>
-              </Link>
+              {/* Dashboard + Logout — stays on its own row above the chip until lg */}
+              <div className="flex items-center gap-3">
+                <Link
+                  to={getDashboardLink()}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-sm shadow-lg shadow-blue-900/40 transition-all transform hover:scale-105 active:scale-95"
+                >
+                  <LayoutDashboard size={16} />
+                  <span>Dashboard</span>
+                </Link>
 
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-blue-500/20 text-blue-100/60 hover:text-white hover:bg-white/5 transition-all text-sm font-semibold"
-                title="Logout"
-              >
-                <LogOut size={16} />
-              </button>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-full border border-blue-500/20 text-blue-100/60 hover:text-white hover:bg-white/5 transition-all text-sm font-semibold"
+                  title="Logout"
+                >
+                  <LogOut size={16} />
+                </button>
+              </div>
             </div>
           ) : (
             <Link
