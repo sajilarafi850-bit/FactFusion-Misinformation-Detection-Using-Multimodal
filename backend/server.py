@@ -39,6 +39,7 @@ def after_request(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Expose-Headers'] = 'X-Total-Count'
     return response
 
 @app.before_request
@@ -378,7 +379,11 @@ def list_analysis_history():
     if db is None:
         return jsonify({'error': 'Database not connected'}), 500
     try:
-        limit = min(int(request.args.get('limit', 20)), 50)  # default 20, hard cap 50
+        # No hard cap anymore — admin dashboard needs true totals. Frontend
+        # controls page size via `limit` + `skip` for infinite scroll; a
+        # very large limit (e.g. 100000) effectively means "give me all".
+        limit = int(request.args.get('limit', 20))
+        skip = max(int(request.args.get('skip', 0)), 0)
 
         is_admin = request.current_user.get('role') == 'admin'
         requested_user_id = request.args.get('user_id')
@@ -397,9 +402,20 @@ def list_analysis_history():
         # Exclude heavy heatmap matrix — only needed on XAI page for a single record
         projection = {'xai_insights.visual_heatmap': 0}
 
-        records = list(db.analysis.find(query, projection).sort("created_at", -1).limit(limit))
+        total_count = db.analysis.count_documents(query)
+        records = list(
+            db.analysis.find(query, projection)
+            .sort("created_at", -1)
+            .skip(skip)
+            .limit(limit)
+        )
         data = [clean_mongo_record(r) for r in records]
-        return jsonify(data), 200
+        response = jsonify(data)
+        # Lets the frontend know how many records exist in total, so it can
+        # decide whether to keep loading more (infinite scroll) without a
+        # second request.
+        response.headers['X-Total-Count'] = str(total_count)
+        return response, 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
