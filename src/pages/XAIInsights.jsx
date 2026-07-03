@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Fingerprint, MessageSquare, Image as ImageIcon,
   Cpu, Target, Zap, Activity, ShieldCheck, ChevronDown,
-  FileText, Layers, AlertTriangle, Clock, ArrowRight
+  FileText, Layers, AlertTriangle, Clock, ArrowRight, Search
 } from 'lucide-react';
 import { XAIVisualizer } from './Detection';
 
@@ -28,6 +28,9 @@ const XAIInsights = () => {
 
   const [records, setRecords] = useState(incomingResult ? [incomingResult] : []);
   const [loading, setLoading] = useState(!incomingResult);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const PAGE_SIZE = 20;
   const [selectedIdx, setSelectedIdx] = useState(incomingResult ? 0 : null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   // The history endpoint now requires login. If we have no incomingResult to
@@ -35,16 +38,26 @@ const XAIInsights = () => {
   // in" message instead of the generic "No Analyses Yet" empty state.
   const [authRequired, setAuthRequired] = useState(false);
 
-  useEffect(() => {
-    const fetchRecords = async () => {
-      try {
-        let url = `${API_BASE}/api/v1/analysis-history`;
-        const res = await axios.get(url, { headers: authHeaders() });
-        const data = Array.isArray(res.data) ? res.data : [];
-        // Only keep records that have xai_insights
-        const withXai = data.filter(r => r.xai_insights);
+  const [rawFetchedCount, setRawFetchedCount] = useState(0);
+  const [dropdownSearch, setDropdownSearch] = useState("");
 
-        if (incomingResult) {
+  const fetchRecords = async (skip = 0, search = dropdownSearch) => {
+    if (skip === 0) setLoading(true);
+    else setLoadingMore(true);
+    try {
+      let url = `${API_BASE}/api/v1/analysis-history?limit=${PAGE_SIZE}&skip=${skip}`;
+      if (search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
+      const res = await axios.get(url, { headers: authHeaders() });
+      const data = Array.isArray(res.data) ? res.data : [];
+      const total = parseInt(res.headers['x-total-count'], 10);
+      if (!Number.isNaN(total)) setTotalCount(total);
+      setRawFetchedCount(prev => (skip === 0 ? data.length : prev + data.length));
+
+      // Only keep records that have xai_insights
+      const withXai = data.filter(r => r.xai_insights);
+
+      if (skip === 0) {
+        if (incomingResult && !search.trim()) {
           // We already have the just-run detection in hand (passed via router
           // state). If the history endpoint has since picked it up, prefer
           // that (fully-formed) version and select it; otherwise keep our
@@ -67,18 +80,38 @@ const XAIInsights = () => {
             }
           }
         }
-      } catch (err) {
-        console.error('Failed to fetch analysis history:', err);
-        if (err.response?.status === 401 && !incomingResult) {
-          setAuthRequired(true);
-        }
-      } finally {
-        setLoading(false);
+      } else {
+        // Load More — append to whatever's already showing
+        setRecords(prev => [...prev, ...withXai]);
       }
-    };
-    fetchRecords();
+    } catch (err) {
+      console.error('Failed to fetch analysis history:', err);
+      if (err.response?.status === 401 && !incomingResult) {
+        setAuthRequired(true);
+      }
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  };
+
+  const loadMoreRecords = () => fetchRecords(rawFetchedCount);
+
+  useEffect(() => {
+    fetchRecords(0, "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanId]);
+
+  // Debounced server-side search within the dropdown
+  const isFirstDropdownSearch = React.useRef(true);
+  useEffect(() => {
+    if (isFirstDropdownSearch.current) { isFirstDropdownSearch.current = false; return; }
+    const timer = setTimeout(() => {
+      fetchRecords(0, dropdownSearch);
+    }, 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dropdownSearch]);
 
   // The list endpoint deliberately omits xai_insights.visual_heatmap for performance.
   // Once a record is selected, fetch the full record (heatmap included) from the
@@ -262,27 +295,70 @@ const XAIInsights = () => {
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
-                    className="absolute z-50 w-full mt-2 rounded-2xl bg-[#0a1128] border border-white/10 shadow-2xl overflow-hidden max-h-72 overflow-y-auto"
+                    className="absolute z-50 w-full mt-2 rounded-2xl bg-[#0a1128] border border-white/10 shadow-2xl overflow-hidden flex flex-col"
                   >
-                    {records.map((record, idx) => (
-                      <button
-                        key={record.id || idx}
-                        onClick={() => { setSelectedIdx(idx); setDropdownOpen(false); }}
-                        className={`w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-blue-500/10 transition-all border-b border-white/5 last:border-b-0 ${idx === selectedIdx ? 'bg-blue-500/10' : ''
-                          }`}
-                      >
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <div className="flex gap-1.5">
-                            <FileText size={14} className={record.text_snippet ? 'text-blue-400' : 'text-white/10'} />
-                            <ImageIcon size={14} className={record.image_ref ? 'text-indigo-400' : 'text-white/10'} />
-                          </div>
-                          <span className="text-sm text-white/80 font-medium truncate">{getRecordLabel(record, idx)}</span>
+                    {/* Search — server-side, filters across ALL scans, not just what's loaded */}
+                    <div className="sticky top-0 z-10 bg-[#0a1128] border-b border-white/10 px-4 py-3 flex items-center gap-2">
+                      <Search size={14} className="text-white/30 shrink-0" />
+                      <input
+                        type="text"
+                        value={dropdownSearch}
+                        onChange={(e) => setDropdownSearch(e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
+                        placeholder="Search by text, verdict, or explanation..."
+                        className="w-full bg-transparent outline-none text-sm text-white/80 placeholder:text-white/20"
+                      />
+                    </div>
+
+                    <div
+                      className="max-h-72 overflow-y-auto"
+                      onScroll={(e) => {
+                        const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+                        // Trigger the next page a little before hitting the
+                        // literal bottom, so it feels seamless rather than
+                        // requiring the user to hit a hard wall first.
+                        if (
+                          scrollHeight - scrollTop - clientHeight < 120 &&
+                          !loading && !loadingMore &&
+                          rawFetchedCount < totalCount
+                        ) {
+                          loadMoreRecords();
+                        }
+                      }}
+                    >
+                      {records.length === 0 && !loading ? (
+                        <div className="px-6 py-8 text-center text-sm text-white/30 italic">
+                          No matching scans found.
                         </div>
-                        <span className={`text-[10px] font-black uppercase ${getVerdictColor(record.verdict)}`}>
-                          {record.verdict?.split('—')[0]?.trim() || 'N/A'}
-                        </span>
-                      </button>
-                    ))}
+                      ) : (
+                        records.map((record, idx) => (
+                          <button
+                            key={record.id || idx}
+                            onClick={() => { setSelectedIdx(idx); setDropdownOpen(false); }}
+                            className={`w-full flex items-center gap-4 px-6 py-4 text-left hover:bg-blue-500/10 transition-all border-b border-white/5 last:border-b-0 ${idx === selectedIdx ? 'bg-blue-500/10' : ''
+                              }`}
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="flex gap-1.5">
+                                <FileText size={14} className={record.text_snippet ? 'text-blue-400' : 'text-white/10'} />
+                                <ImageIcon size={14} className={record.image_ref ? 'text-indigo-400' : 'text-white/10'} />
+                              </div>
+                              <span className="text-sm text-white/80 font-medium truncate">{getRecordLabel(record, idx)}</span>
+                            </div>
+                            <span className={`text-[10px] font-black uppercase ${getVerdictColor(record.verdict)}`}>
+                              {record.verdict?.split('—')[0]?.trim() || 'N/A'}
+                            </span>
+                          </button>
+                        ))
+                      )}
+
+                      {/* Auto-loads on scroll (see onScroll above) — this just shows status */}
+                      {rawFetchedCount < totalCount && (
+                        <div className="px-6 py-3 text-center text-[10px] text-blue-400/60 uppercase tracking-widest font-bold">
+                          {loadingMore ? 'Loading more...' : `${rawFetchedCount} of ${totalCount} loaded`}
+                        </div>
+                      )}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>

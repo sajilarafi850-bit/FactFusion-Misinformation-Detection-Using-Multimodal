@@ -1,4 +1,5 @@
 import os
+import re
 import datetime
 import hashlib
 import secrets
@@ -398,6 +399,18 @@ def list_analysis_history():
             # trusted from the query string, which meant a plain GET with no
             # user_id at all returned every user's records.
             query = {"user_id": request.current_user['sub']}
+
+        search = (request.args.get('search') or '').strip()
+        if search:
+            # Escape user input before dropping it into a regex — otherwise
+            # someone typing e.g. ".*" or "(" could throw a MongoDB regex
+            # error or make the query needlessly expensive.
+            safe_search = re.escape(search)
+            query['$or'] = [
+                {'text_snippet': {'$regex': safe_search, '$options': 'i'}},
+                {'verdict': {'$regex': safe_search, '$options': 'i'}},
+                {'xai_insights.explanation': {'$regex': safe_search, '$options': 'i'}},
+            ]
 
         # Exclude heavy heatmap matrix — only needed on XAI page for a single record
         projection = {'xai_insights.visual_heatmap': 0}

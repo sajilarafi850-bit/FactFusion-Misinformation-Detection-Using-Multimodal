@@ -17,101 +17,100 @@ import { getVerdictCategory, getVerdictColor, SCORE_THRESHOLDS } from '../utils/
 const AnalysisHistory = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
-  const [pageSize, setPageSize] = useState(25);
-  const [page, setPage] = useState(0); // 0-indexed
 
-  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+  const PAGE_SIZE = 20;
+
   const COLORS = ['#10b981', '#ef4444', '#9ca3af'];
 
   const getApiBase = () =>
     import.meta.env.VITE_API_BASE_URL || 'https://inas-00-factfusion-backend.hf.space';
 
-  // All protected routes need this — kept as one helper so the token is
-  // read fresh from localStorage on every call, not captured stale at mount.
-  const authHeader = () => ({
-    headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
-  });
+  // ── FETCH ────────────────────────────────────────────────────────────────
+  // skip=0 (default) replaces the list — used on initial load, refresh, and
+  // whenever the search query changes. skip>0 appends — used by infinite scroll.
+  const fetchHistory = async (signal, skip = 0, search = searchQuery) => {
+    if (skip === 0) setLoading(true);
+    else setLoadingMore(true);
 
-  const buildHistoryUrl = (skip, limit) => {
-    const userString = localStorage.getItem('user');
-    let url = `${getApiBase()}/api/v1/analysis-history?limit=${limit}&skip=${skip}`;
-    if (userString) {
-      try {
-        const user = JSON.parse(userString);
-        if (user && user.id && user.role !== 'admin') {
-          url += `&user_id=${user.id}`;
-        }
-        // Admins get no user_id filter — every record in the database.
-      } catch (e) {
-        console.error("Error parsing user for history query:", e);
-      }
-    }
-    return url;
-  };
-
-  // ── FETCH current page ───────────────────────────────────────────────────
-  const fetchHistory = async (signal, targetPage = page, targetPageSize = pageSize) => {
-    setLoading(true);
     try {
-      const response = await axios.get(
-        buildHistoryUrl(targetPage * targetPageSize, targetPageSize),
-        { signal, ...authHeader() }
-      );
+      const userString = localStorage.getItem('user');
+      let url = `${getApiBase()}/api/v1/analysis-history?limit=${PAGE_SIZE}&skip=${skip}`;
+      if (search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
+      if (userString) {
+        try {
+          const user = JSON.parse(userString);
+          if (user && user.id && user.role !== 'admin') {
+            url += `&user_id=${user.id}`;
+          }
+        } catch (e) {
+          console.error("Error parsing user for history query:", e);
+        }
+      }
+      const response = await axios.get(url, { signal });
       const data = Array.isArray(response.data) ? response.data : [];
-      setHistory(data);
-      const totalHeader = response.headers?.['x-total-count'];
-      setTotalCount(totalHeader ? parseInt(totalHeader, 10) : data.length);
+      const total = parseInt(response.headers['x-total-count'], 10);
+      if (!Number.isNaN(total)) setTotalCount(total);
+
+      setHistory(prev => (skip === 0 ? data : [...prev, ...data]));
     } catch (err) {
       if (axios.isCancel(err) || err?.name === 'CanceledError') return;
       console.error("Connection Error:", err.message);
-      setHistory([]);
+      if (skip === 0) setHistory([]);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
-  // Refetch whenever the page or page size changes
+  const loadMore = () => fetchHistory(undefined, history.length);
+
+  // Initial load
   useEffect(() => {
     const controller = new AbortController();
-    fetchHistory(controller.signal, page, pageSize);
+    fetchHistory(controller.signal, 0, "");
     return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize]);
+  }, []);
 
-  // Poll the current page every 15s so newly added analyses show up without
-  // a manual refresh — stays on whichever page the admin is currently viewing.
+  // Debounced server-side search — re-fetches from skip=0 whenever the query
+  // settles for 400ms, instead of only filtering whatever's already loaded.
+  const isFirstSearchRun = React.useRef(true);
   useEffect(() => {
+    if (isFirstSearchRun.current) { isFirstSearchRun.current = false; return; }
     const controller = new AbortController();
-    const pollId = setInterval(() => {
-      fetchHistory(controller.signal, page, pageSize);
-    }, 15000);
-    return () => {
-      controller.abort();
-      clearInterval(pollId);
-    };
+    const timer = setTimeout(() => {
+      fetchHistory(controller.signal, 0, searchQuery);
+    }, 400);
+    return () => { clearTimeout(timer); controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize]);
+  }, [searchQuery]);
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  const rangeStart = totalCount === 0 ? 0 : page * pageSize + 1;
-  const rangeEnd = Math.min(totalCount, (page + 1) * pageSize);
-
-  const goToPage = (newPage) => {
-    if (newPage < 0 || newPage >= totalPages) return;
-    setSelectedIds(new Set()); // selections shouldn't carry across pages
-    setPage(newPage);
-  };
+  // ── INFINITE SCROLL ──────────────────────────────────────────────────────
+  const sentinelRef = React.useRef(null);
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting && !loading && !loadingMore && history.length < totalCount) {
+        loadMore();
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, loadingMore, history.length, totalCount]);
 
   // ── DELETE LOGIC ─────────────────────────────────────────────────────────
   const deleteOne = async (id) => {
     try {
-      await axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, authHeader());
+      await axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`);
       setHistory(prev => prev.filter(item => (item.id || item._id) !== id));
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+      setTotalCount(prev => Math.max(0, prev - 1));
     } catch (err) {
       console.error('Delete failed:', err);
       alert('Failed to delete record. Please try again.');
@@ -124,9 +123,10 @@ const AnalysisHistory = () => {
     setDeleting(true);
     try {
       await Promise.all([...selectedIds].map(id =>
-        axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, authHeader())
+        axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`)
       ));
       setHistory(prev => prev.filter(item => !selectedIds.has(item.id || item._id)));
+      setTotalCount(prev => Math.max(0, prev - selectedIds.size));
       setSelectedIds(new Set());
     } catch (err) {
       console.error('Bulk delete failed:', err);
@@ -137,12 +137,20 @@ const AnalysisHistory = () => {
   };
 
   const clearAll = async () => {
-    if (!window.confirm(`Delete ALL ${history.length} records? This cannot be undone.`)) return;
+    // Note: this only deletes records currently loaded on the page, not
+    // every record matching the query — with pagination, those can differ.
+    // The confirm text is explicit about this so it's never misleading.
+    const loadedCount = history.length;
+    const confirmMsg = loadedCount < totalCount
+      ? `Delete the ${loadedCount} loaded record${loadedCount === 1 ? '' : 's'} (of ${totalCount} total — load more first if you want to clear everything)? This cannot be undone.`
+      : `Delete ALL ${loadedCount} records? This cannot be undone.`;
+    if (!window.confirm(confirmMsg)) return;
     setDeleting(true);
     try {
       await Promise.all(history.map(item =>
-        axios.delete(`${getApiBase()}/api/v1/analysis-history/${item.id || item._id}`, authHeader())
+        axios.delete(`${getApiBase()}/api/v1/analysis-history/${item.id || item._id}`)
       ));
+      setTotalCount(prev => Math.max(0, prev - history.length));
       setHistory([]);
       setSelectedIds(new Set());
     } catch (err) {
@@ -171,17 +179,9 @@ const AnalysisHistory = () => {
   };
 
   // ── DERIVED DATA ──────────────────────────────────────────────────────────
-  const filteredHistory = useMemo(() => {
-    return history.filter(item => {
-      const query = searchQuery.toLowerCase();
-      return (
-        (item.text_snippet?.toLowerCase() || "").includes(query) ||
-        (item.verdict?.toLowerCase() || "").includes(query) ||
-        (item.xai_insights?.explanation?.toLowerCase() || "").includes(query)
-      );
-    });
-  }, [searchQuery, history]);
-
+  // Note: search is now server-side (see fetchHistory's `search` param), so
+  // `history` already reflects the current search query — no client-side
+  // filtering needed here anymore.
   const pieData = [
     { name: 'Informative', value: history.filter(h => getVerdictCategory(h.verdict) === 'Informative').length },
     { name: 'Non-Informative', value: history.filter(h => getVerdictCategory(h.verdict) === 'Non-Informative').length },
@@ -210,7 +210,7 @@ const AnalysisHistory = () => {
     });
   }, [history]);
 
-  const allSelectedOnPage = filteredHistory.length > 0 && selectedIds.size === filteredHistory.length;
+  const allSelectedOnPage = history.length > 0 && selectedIds.size === history.length;
 
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
@@ -254,7 +254,7 @@ const AnalysisHistory = () => {
               />
             </div>
             <button
-              onClick={() => fetchHistory(undefined, page, pageSize)}
+              onClick={() => fetchHistory(undefined, 0)}
               className="p-4 bg-blue-600/10 border border-blue-500/20 rounded-2xl hover:bg-blue-600/20 text-blue-400 transition-all active:scale-95"
               title="Refresh"
             >
@@ -379,58 +379,6 @@ const AnalysisHistory = () => {
 
         {/* --- Logs Table --- */}
         <div className="bg-white/[0.02] border border-white/10 rounded-[3rem] overflow-hidden backdrop-blur-3xl">
-          {/* --- Pagination Bar --- */}
-          <div className="flex items-center justify-between gap-4 px-8 py-5 border-b border-white/5 flex-wrap">
-            <div className="flex items-center gap-2">
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(parseInt(e.target.value, 10));
-                  setPage(0); // page size change resets to first page
-                }}
-                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-blue-500/50 cursor-pointer"
-              >
-                {PAGE_SIZE_OPTIONS.map(size => (
-                  <option key={size} value={size} className="bg-[#020617]">{size}</option>
-                ))}
-              </select>
-
-              <span className="text-sm text-white/40 font-medium ml-2">
-                {rangeStart}–{rangeEnd} of {totalCount}
-              </span>
-
-              <button
-                onClick={() => fetchHistory(undefined, page, pageSize)}
-                className="p-2 rounded-lg hover:bg-white/5 text-blue-400 transition-all"
-                title="Refresh"
-              >
-                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => goToPage(page - 1)}
-                disabled={page === 0}
-                className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                title="Previous page"
-              >
-                &lsaquo;
-              </button>
-              <span className="text-sm text-white/40 font-medium px-2">
-                Page {totalCount === 0 ? 0 : page + 1} of {totalPages}
-              </span>
-              <button
-                onClick={() => goToPage(page + 1)}
-                disabled={page + 1 >= totalPages}
-                className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                title="Next page"
-              >
-                &rsaquo;
-              </button>
-            </div>
-          </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -440,7 +388,7 @@ const AnalysisHistory = () => {
                     <input
                       type="checkbox"
                       checked={allSelectedOnPage}
-                      onChange={() => toggleSelectAll(filteredHistory)}
+                      onChange={() => toggleSelectAll(history)}
                       className="w-3.5 h-3.5 rounded border-white/20 bg-slate-900 text-blue-500 focus:ring-0 focus:ring-offset-0 accent-blue-500 cursor-pointer transition-all mix-blend-screen opacity-70 hover:opacity-100"
                       title="Select all"
                     />
@@ -455,9 +403,9 @@ const AnalysisHistory = () => {
               <tbody className="divide-y divide-white/5">
                 {loading ? (
                   <tr><td colSpan="6" className="py-32 text-center text-white/10 font-black uppercase text-xs tracking-widest animate-pulse">Neural Synchronization...</td></tr>
-                ) : filteredHistory.length === 0 ? (
+                ) : history.length === 0 ? (
                   <tr><td colSpan="6" className="py-20 text-center text-white/30 italic font-medium">No archive records found.</td></tr>
-                ) : filteredHistory.map((item, idx) => {
+                ) : history.map((item, idx) => {
                   const id = item.id || item._id;
                   const isSelected = selectedIds.has(id);
                   const cat = getVerdictCategory(item.verdict);
@@ -533,6 +481,29 @@ const AnalysisHistory = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Infinite scroll sentinel — fetches the next page automatically once
+              it scrolls into view; no button needed. Falls back gracefully:
+              if IntersectionObserver ever fails to fire, the count line below
+              still shows accurate state. */}
+          {!loading && (
+            <div className="flex flex-col items-center gap-2 py-8 border-t border-white/5">
+              <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">
+                {history.length < totalCount
+                  ? `Showing ${history.length} of ${totalCount}`
+                  : `All ${totalCount} record${totalCount === 1 ? '' : 's'} loaded`}
+              </p>
+              {history.length < totalCount && (
+                <div ref={sentinelRef} className="h-6 flex items-center justify-center">
+                  {loadingMore && (
+                    <span className="text-[10px] text-blue-400/60 uppercase tracking-widest font-bold animate-pulse">
+                      Loading more...
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
       </div>
