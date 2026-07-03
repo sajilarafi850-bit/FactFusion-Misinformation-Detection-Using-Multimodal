@@ -296,7 +296,13 @@ const Detection = () => {
                   value={textValue}
                   onChange={(e) => setTextValue(e.target.value)}
                   placeholder="Paste news caption, social post, or disaster report..."
-                  className="w-full h-72 p-8 rounded-[2.5rem] bg-[#020617]/50 border border-white/5 focus:border-blue-500/50 text-blue-100 text-lg outline-none transition-all"
+                  className="w-full h-72 p-8 rounded-[2.5rem] bg-[#020617]/50 border border-white/5 focus:border-blue-500/50 text-blue-100 text-lg outline-none transition-all
+                    [&::-webkit-scrollbar]:w-2
+                    [&::-webkit-scrollbar-track]:bg-transparent
+                    [&::-webkit-scrollbar-thumb]:bg-blue-500/30
+                    [&::-webkit-scrollbar-thumb]:rounded-full
+                    [&::-webkit-scrollbar-thumb:hover]:bg-blue-500/50"
+                  style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(59,130,246,0.3) transparent' }}
                 />
               </div>
             )}

@@ -379,6 +379,58 @@ const AnalysisHistory = () => {
 
         {/* --- Logs Table --- */}
         <div className="bg-white/[0.02] border border-white/10 rounded-[3rem] overflow-hidden backdrop-blur-3xl">
+          {/* --- Pagination Bar --- */}
+          <div className="flex items-center justify-between gap-4 px-8 py-5 border-b border-white/5 flex-wrap">
+            <div className="flex items-center gap-2">
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value, 10));
+                  setPage(0); // page size change resets to first page
+                }}
+                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-blue-500/50 cursor-pointer"
+              >
+                {PAGE_SIZE_OPTIONS.map(size => (
+                  <option key={size} value={size} className="bg-[#020617]">{size}</option>
+                ))}
+              </select>
+
+              <span className="text-sm text-white/40 font-medium ml-2">
+                {rangeStart}–{rangeEnd} of {totalCount}
+              </span>
+
+              <button
+                onClick={() => fetchHistory(undefined, page, pageSize)}
+                className="p-2 rounded-lg hover:bg-white/5 text-blue-400 transition-all"
+                title="Refresh"
+              >
+                <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => goToPage(page - 1)}
+                disabled={page === 0}
+                className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                title="Previous page"
+              >
+                &lsaquo;
+              </button>
+              <span className="text-sm text-white/40 font-medium px-2">
+                Page {totalCount === 0 ? 0 : page + 1} of {totalPages}
+              </span>
+              <button
+                onClick={() => goToPage(page + 1)}
+                disabled={page + 1 >= totalPages}
+                className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                title="Next page"
+              >
+                &rsaquo;
+              </button>
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -480,58 +532,6 @@ const AnalysisHistory = () => {
                 })}
               </tbody>
             </table>
-
-            {/* --- Pagination Bar --- */}
-            <div className="flex items-center justify-between gap-4 px-8 py-5 border-t border-white/5 flex-wrap">
-              <div className="flex items-center gap-2">
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(parseInt(e.target.value, 10));
-                    setPage(0); // page size change resets to first page
-                  }}
-                  className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-blue-500/50 cursor-pointer"
-                >
-                  {PAGE_SIZE_OPTIONS.map(size => (
-                    <option key={size} value={size} className="bg-[#020617]">{size}</option>
-                  ))}
-                </select>
-
-                <span className="text-sm text-white/40 font-medium ml-2">
-                  {rangeStart}–{rangeEnd} of {totalCount}
-                </span>
-
-                <button
-                  onClick={() => fetchHistory(undefined, page, pageSize)}
-                  className="p-2 rounded-lg hover:bg-white/5 text-blue-400 transition-all"
-                  title="Refresh"
-                >
-                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => goToPage(page - 1)}
-                  disabled={page === 0}
-                  className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                  title="Previous page"
-                >
-                  &lsaquo;
-                </button>
-                <span className="text-sm text-white/40 font-medium px-2">
-                  Page {totalCount === 0 ? 0 : page + 1} of {totalPages}
-                </span>
-                <button
-                  onClick={() => goToPage(page + 1)}
-                  disabled={page + 1 >= totalPages}
-                  className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
-                  title="Next page"
-                >
-                  &rsaquo;
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 
