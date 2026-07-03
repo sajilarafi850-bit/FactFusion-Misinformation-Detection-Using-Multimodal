@@ -8,7 +8,7 @@ import {
 import {
   RefreshCw, Search, FileText,
   Image as ImageIcon, AlertTriangle, CheckCircle2, Shield,
-  Trash2, X
+  Trash2, X, ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 // Shared Util Import
@@ -17,13 +17,13 @@ import { getVerdictCategory, getVerdictColor, SCORE_THRESHOLDS } from '../utils/
 const AnalysisHistory = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
 
-  const PAGE_SIZE = 20;
+  const [pageSize, setPageSize] = useState(25);
+  const [currentPage, setCurrentPage] = useState(0); // 0-indexed
 
   const COLORS = ['#10b981', '#ef4444', '#9ca3af'];
 
@@ -39,15 +39,14 @@ const AnalysisHistory = () => {
   };
 
   // ── FETCH ────────────────────────────────────────────────────────────────
-  // skip=0 (default) replaces the list — used on initial load, refresh, and
-  // whenever the search query changes. skip>0 appends — used by infinite scroll.
-  const fetchHistory = async (signal, skip = 0, search = searchQuery) => {
-    if (skip === 0) setLoading(true);
-    else setLoadingMore(true);
-
+  // Page-based: always replaces the list (never appends). skip is derived
+  // from currentPage * pageSize.
+  const fetchHistory = async (signal, page = currentPage, size = pageSize, search = searchQuery) => {
+    setLoading(true);
     try {
+      const skip = page * size;
       const userString = localStorage.getItem('user');
-      let url = `${getApiBase()}/api/v1/analysis-history?limit=${PAGE_SIZE}&skip=${skip}`;
+      let url = `${getApiBase()}/api/v1/analysis-history?limit=${size}&skip=${skip}`;
       if (search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
       if (userString) {
         try {
@@ -64,60 +63,85 @@ const AnalysisHistory = () => {
       const total = parseInt(response.headers['x-total-count'], 10);
       if (!Number.isNaN(total)) setTotalCount(total);
 
-      setHistory(prev => (skip === 0 ? data : [...prev, ...data]));
+      setHistory(data);
     } catch (err) {
       if (axios.isCancel(err) || err?.name === 'CanceledError') return;
       console.error("Connection Error:", err.message);
-      if (skip === 0) setHistory([]);
+      setHistory([]);
     } finally {
       setLoading(false);
-      setLoadingMore(false);
     }
   };
 
-  const loadMore = () => fetchHistory(undefined, history.length);
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const rangeStart = totalCount === 0 ? 0 : currentPage * pageSize + 1;
+  const rangeEnd = Math.min((currentPage + 1) * pageSize, totalCount);
+
+  const goToPage = (page) => {
+    const clamped = Math.max(0, Math.min(page, totalPages - 1));
+    setCurrentPage(clamped);
+  };
+
+  const changePageSize = (size) => {
+    setPageSize(size);
+    setCurrentPage(0); // page sizes shift what "page 2" even means, so reset
+  };
+
+  const refresh = () => fetchHistory(undefined, currentPage, pageSize, searchQuery);
 
   // Initial load
   useEffect(() => {
     const controller = new AbortController();
-    fetchHistory(controller.signal, 0, "");
+    fetchHistory(controller.signal, 0, pageSize, "");
     return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Debounced server-side search — re-fetches from skip=0 whenever the query
+  // Re-fetch whenever page or page size changes
+  const isFirstPageRun = React.useRef(true);
+  useEffect(() => {
+    if (isFirstPageRun.current) { isFirstPageRun.current = false; return; }
+    const controller = new AbortController();
+    fetchHistory(controller.signal, currentPage, pageSize, searchQuery);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage, pageSize]);
+
+  // Debounced server-side search — re-fetches from page 0 whenever the query
   // settles for 400ms, instead of only filtering whatever's already loaded.
   const isFirstSearchRun = React.useRef(true);
   useEffect(() => {
     if (isFirstSearchRun.current) { isFirstSearchRun.current = false; return; }
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetchHistory(controller.signal, 0, searchQuery);
+      setCurrentPage(0);
+      fetchHistory(controller.signal, 0, pageSize, searchQuery);
     }, 400);
     return () => { clearTimeout(timer); controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery]);
 
-  // ── INFINITE SCROLL ──────────────────────────────────────────────────────
-  const sentinelRef = React.useRef(null);
-  useEffect(() => {
-    const node = sentinelRef.current;
-    if (!node) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting && !loading && !loadingMore && history.length < totalCount) {
-        loadMore();
-      }
-    }, { rootMargin: '200px' });
-    observer.observe(node);
-    return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, loadingMore, history.length, totalCount]);
-
   // ── DELETE LOGIC ─────────────────────────────────────────────────────────
+  // All three refetch the current page from the server afterward, rather than
+  // splicing `history` locally — with real pagination, locally removing an
+  // item would leave the page one short instead of pulling in the next
+  // record from the server.
+  const afterDeleteRefresh = (deletedCount) => {
+    const newTotal = Math.max(0, totalCount - deletedCount);
+    setTotalCount(newTotal);
+    const lastPageIndex = Math.max(0, Math.ceil(newTotal / pageSize) - 1);
+    if (currentPage > lastPageIndex) {
+      setCurrentPage(lastPageIndex); // triggers the page-change effect, which refetches
+    } else {
+      fetchHistory(undefined, currentPage, pageSize, searchQuery);
+    }
+  };
+
   const deleteOne = async (id) => {
     try {
       await axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, { headers: authHeaders() });
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
-      setTotalCount(prev => Math.max(0, prev - 1));
+      afterDeleteRefresh(1);
     } catch (err) {
       console.error('Delete failed:', err);
       alert('Failed to delete record. Please try again.');
@@ -132,9 +156,9 @@ const AnalysisHistory = () => {
       await Promise.all([...selectedIds].map(id =>
         axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, { headers: authHeaders() })
       ));
-      setHistory(prev => prev.filter(item => !selectedIds.has(item.id || item._id)));
-      setTotalCount(prev => Math.max(0, prev - selectedIds.size));
+      const count = selectedIds.size;
       setSelectedIds(new Set());
+      afterDeleteRefresh(count);
     } catch (err) {
       console.error('Bulk delete failed:', err);
       alert('Some records could not be deleted. Please try again.');
@@ -144,12 +168,12 @@ const AnalysisHistory = () => {
   };
 
   const clearAll = async () => {
-    // Note: this only deletes records currently loaded on the page, not
-    // every record matching the query — with pagination, those can differ.
-    // The confirm text is explicit about this so it's never misleading.
+    // Note: this only deletes records currently loaded on the current page,
+    // not every record matching the query — the confirm text is explicit
+    // about this so it's never misleading.
     const loadedCount = history.length;
     const confirmMsg = loadedCount < totalCount
-      ? `Delete the ${loadedCount} loaded record${loadedCount === 1 ? '' : 's'} (of ${totalCount} total — load more first if you want to clear everything)? This cannot be undone.`
+      ? `Delete the ${loadedCount} record${loadedCount === 1 ? '' : 's'} on this page (of ${totalCount} total)? This cannot be undone.`
       : `Delete ALL ${loadedCount} records? This cannot be undone.`;
     if (!window.confirm(confirmMsg)) return;
     setDeleting(true);
@@ -157,9 +181,8 @@ const AnalysisHistory = () => {
       await Promise.all(history.map(item =>
         axios.delete(`${getApiBase()}/api/v1/analysis-history/${item.id || item._id}`, { headers: authHeaders() })
       ));
-      setTotalCount(prev => Math.max(0, prev - history.length));
-      setHistory([]);
       setSelectedIds(new Set());
+      afterDeleteRefresh(loadedCount);
     } catch (err) {
       console.error('Clear all failed:', err);
       alert('Some records could not be deleted. Please try again.');
@@ -219,6 +242,54 @@ const AnalysisHistory = () => {
 
   const allSelectedOnPage = history.length > 0 && selectedIds.size === history.length;
 
+  const PaginationBar = ({ className = "" }) => (
+    <div className={`flex items-center justify-end gap-3 py-4 px-6 ${className}`}>
+      <div className="relative">
+        <select
+          value={pageSize}
+          onChange={(e) => changePageSize(Number(e.target.value))}
+          className="appearance-none bg-white/5 border border-white/10 rounded-xl pl-3 pr-8 py-1.5 text-xs font-bold text-blue-100/70 outline-none focus:border-blue-500/50 cursor-pointer"
+        >
+          {[10, 25, 50].map(n => (
+            <option key={n} value={n} className="bg-[#0a1128] text-white">{n}</option>
+          ))}
+        </select>
+        <ChevronRight size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 rotate-90 text-white/30 pointer-events-none" />
+      </div>
+
+      <span className="text-xs font-bold text-white/40 tabular-nums">
+        {rangeStart}–{rangeEnd} of {totalCount}
+      </span>
+
+      <button
+        onClick={refresh}
+        title="Refresh"
+        className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all"
+      >
+        <RefreshCw size={16} />
+      </button>
+
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => goToPage(currentPage - 1)}
+          disabled={currentPage === 0}
+          title="Previous page"
+          className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:pointer-events-none"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <button
+          onClick={() => goToPage(currentPage + 1)}
+          disabled={currentPage >= totalPages - 1}
+          title="Next page"
+          className="p-2 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all disabled:opacity-20 disabled:pointer-events-none"
+        >
+          <ChevronRight size={18} />
+        </button>
+      </div>
+    </div>
+  );
+
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-[#020617] text-white pt-32 px-6 pb-20 selection:bg-blue-500/30 font-sans">
@@ -261,7 +332,7 @@ const AnalysisHistory = () => {
               />
             </div>
             <button
-              onClick={() => fetchHistory(undefined, 0)}
+              onClick={refresh}
               className="p-4 bg-blue-600/10 border border-blue-500/20 rounded-2xl hover:bg-blue-600/20 text-blue-400 transition-all active:scale-95"
               title="Refresh"
             >
@@ -386,6 +457,11 @@ const AnalysisHistory = () => {
 
         {/* --- Logs Table --- */}
         <div className="bg-white/[0.02] border border-white/10 rounded-[3rem] overflow-hidden backdrop-blur-3xl">
+
+          {!loading && totalCount > 0 && (
+            <PaginationBar className="border-b border-white/5" />
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
@@ -489,27 +565,8 @@ const AnalysisHistory = () => {
             </table>
           </div>
 
-          {/* Infinite scroll sentinel — fetches the next page automatically once
-              it scrolls into view; no button needed. Falls back gracefully:
-              if IntersectionObserver ever fails to fire, the count line below
-              still shows accurate state. */}
-          {!loading && (
-            <div className="flex flex-col items-center gap-2 py-8 border-t border-white/5">
-              <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">
-                {history.length < totalCount
-                  ? `Showing ${history.length} of ${totalCount}`
-                  : `All ${totalCount} record${totalCount === 1 ? '' : 's'} loaded`}
-              </p>
-              {history.length < totalCount && (
-                <div ref={sentinelRef} className="h-6 flex items-center justify-center">
-                  {loadingMore && (
-                    <span className="text-[10px] text-blue-400/60 uppercase tracking-widest font-bold animate-pulse">
-                      Loading more...
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
+          {!loading && totalCount >= 10 && (
+            <PaginationBar className="border-t border-white/5" />
           )}
         </div>
 
