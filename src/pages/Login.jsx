@@ -13,6 +13,47 @@ import {
   Bot
 } from 'lucide-react';
 
+const COMMON_EMAIL_DOMAINS = [
+  'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com',
+  'icloud.com', 'live.com', 'aol.com', 'protonmail.com'
+];
+
+// Small edit-distance check — catches things like gmail.co, gmial.com,
+// yahoo.cm, hotmial.com without needing a library. Only suggests when the
+// typed domain is close (1-2 edits) to a known one, so it won't fire on
+// legitimate but uncommon domains (e.g. a company's own mail server).
+const levenshtein = (a, b) => {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[a.length][b.length];
+};
+
+const getDomainSuggestion = (emailValue) => {
+  const atIndex = emailValue.lastIndexOf('@');
+  if (atIndex === -1 || atIndex === emailValue.length - 1) return null;
+  const domain = emailValue.slice(atIndex + 1).toLowerCase().trim();
+  if (!domain || COMMON_EMAIL_DOMAINS.includes(domain)) return null;
+
+  let closest = null;
+  let bestDistance = Infinity;
+  for (const known of COMMON_EMAIL_DOMAINS) {
+    const dist = levenshtein(domain, known);
+    if (dist < bestDistance) {
+      bestDistance = dist;
+      closest = known;
+    }
+  }
+  // Only suggest for close-but-wrong typos, not wildly different domains
+  return bestDistance > 0 && bestDistance <= 2 ? closest : null;
+};
+
 const Login = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
@@ -21,6 +62,7 @@ const Login = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [domainSuggestion, setDomainSuggestion] = useState(null);
 
   const backgroundIcons = [
     { Icon: FileText, x: "10%", y: "20%", delay: 0, color: "text-blue-500/10" },
@@ -164,11 +206,28 @@ const Login = () => {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setEmail(val);
+                    setDomainSuggestion(getDomainSuggestion(val));
+                  }}
                   className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:border-blue-500/50 outline-none transition-all text-sm placeholder:text-white/10"
                   placeholder="operator@system.ai"
                 />
               </div>
+              {domainSuggestion && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const corrected = `${email.slice(0, email.lastIndexOf('@'))}@${domainSuggestion}`;
+                    setEmail(corrected);
+                    setDomainSuggestion(null);
+                  }}
+                  className="text-[11px] text-blue-400/70 hover:text-blue-300 ml-1 transition-colors"
+                >
+                  Did you mean <span className="font-bold underline">{email.slice(0, email.lastIndexOf('@'))}@{domainSuggestion}</span>?
+                </button>
+              )}
             </div>
 
             <div className="space-y-2">
