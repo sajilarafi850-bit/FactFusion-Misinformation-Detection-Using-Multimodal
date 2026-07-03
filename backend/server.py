@@ -39,6 +39,9 @@ def after_request(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    # Without this, browsers block JS (axios/fetch) from reading custom
+    # response headers cross-origin — X-Total-Count would silently come back
+    # as undefined even though the server sent it.
     response.headers['Access-Control-Expose-Headers'] = 'X-Total-Count'
     return response
 
@@ -379,10 +382,7 @@ def list_analysis_history():
     if db is None:
         return jsonify({'error': 'Database not connected'}), 500
     try:
-        # No hard cap anymore — admin dashboard needs true totals. Frontend
-        # controls page size via `limit` + `skip` for infinite scroll; a
-        # very large limit (e.g. 100000) effectively means "give me all".
-        limit = int(request.args.get('limit', 20))
+        limit = min(int(request.args.get('limit', 20)), 50)  # default 20, hard cap 50 per page
         skip = max(int(request.args.get('skip', 0)), 0)
 
         is_admin = request.current_user.get('role') == 'admin'
@@ -402,7 +402,7 @@ def list_analysis_history():
         # Exclude heavy heatmap matrix — only needed on XAI page for a single record
         projection = {'xai_insights.visual_heatmap': 0}
 
-        total_count = db.analysis.count_documents(query)
+        total = db.analysis.count_documents(query)
         records = list(
             db.analysis.find(query, projection)
             .sort("created_at", -1)
@@ -410,11 +410,13 @@ def list_analysis_history():
             .limit(limit)
         )
         data = [clean_mongo_record(r) for r in records]
+        # Response stays a bare array for backward compatibility with existing
+        # callers (Dashboard.jsx etc. do Array.isArray(response.data) checks).
+        # Total count travels in a header instead, so pagination-aware callers
+        # (AnalysisHistory.jsx, XAIInsights.jsx) can know when to stop
+        # requesting more without changing the response body shape.
         response = jsonify(data)
-        # Lets the frontend know how many records exist in total, so it can
-        # decide whether to keep loading more (infinite scroll) without a
-        # second request.
-        response.headers['X-Total-Count'] = str(total_count)
+        response.headers['X-Total-Count'] = str(total)
         return response, 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
