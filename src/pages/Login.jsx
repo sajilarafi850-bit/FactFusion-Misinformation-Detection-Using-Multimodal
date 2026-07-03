@@ -224,6 +224,12 @@ const Login = () => {
                 {!isLoading && <ArrowRight size={16} />}
               </span>
             </button>
+
+            {isLogin && (
+              <p className="text-center text-[11px] text-blue-100/30 pt-1">
+                Forgot your access key? Contact an administrator to reset it.
+              </p>
+            )}
           </form>
         </div>
       </motion.div>
