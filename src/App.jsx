@@ -11,8 +11,6 @@ import Detection from './pages/Detection';
 import XAIInsights from './pages/XAIInsights';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
-import ForgotPassword from './pages/Forgotpassword';
-import ResetPassword from './pages/Resetpassword';
 // Components
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -53,8 +51,6 @@ function App() {
           <Routes>
             <Route path="/" element={<Hero />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/about" element={<About />} />
 
             <Route element={<ProtectedRoute />}>

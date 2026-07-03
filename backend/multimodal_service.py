@@ -301,15 +301,27 @@ class MultimodalService:
                 multimodal_label = "NO DATA"
                 reasoning = "Please provide image or text input."
             elif has_image and not has_text:
-                multimodal_label = image_analysis["semantic_label"]
-                forensic_part = (
-                    f" | Forensic: {image_analysis['forensic_label']} ({image_analysis.get('forensic_confidence', 'N/A')})"
-                    if image_analysis.get("forensic_label") not in ("N/A", None) else ""
-                )
-                reasoning = (
-                    f"Image-only audit. Semantic: {image_analysis['semantic_label']} "
-                    f"(conf: {image_analysis.get('semantic_confidence', 'N/A')}){forensic_part}"
-                )
+                if img_is_disaster and image_analysis.get("forensic_label") == "Tampered":
+                    # Same rule the multimodal branch already applies further down —
+                    # a manipulated crisis image should never present as a plain
+                    # "Real Crisis / Disaster" verdict just because no caption was
+                    # supplied. Without this, tampered image-only submissions were
+                    # silently counted as credible/Informative downstream.
+                    multimodal_label = "MISINFORMATION — Manipulated Image"
+                    reasoning = (
+                        "Forensic analysis detected digital alterations in this crisis "
+                        "image. (No accompanying text was provided.)"
+                    )
+                else:
+                    multimodal_label = image_analysis["semantic_label"]
+                    forensic_part = (
+                        f" | Forensic: {image_analysis['forensic_label']} ({image_analysis.get('forensic_confidence', 'N/A')})"
+                        if image_analysis.get("forensic_label") not in ("N/A", None) else ""
+                    )
+                    reasoning = (
+                        f"Image-only audit. Semantic: {image_analysis['semantic_label']} "
+                        f"(conf: {image_analysis.get('semantic_confidence', 'N/A')}){forensic_part}"
+                    )
             elif has_text and not has_image:
                 multimodal_label = text_analysis["text_label"]
                 reasoning = "Text-only audit completed. Results reflect linguistic integrity only."
@@ -349,9 +361,12 @@ class MultimodalService:
                 elif has_temporal_issue:
                     multimodal_label = "MISINFORMATION — Old Content Recirculated as New"
                     reasoning = f"Temporal discrepancy detected: {temporal_warnings[0]}."
-                elif image_analysis["forensic_label"] == "Tampered" and img_is_disaster:
-                    multimodal_label = "MISINFORMATION — Manipulated Image"
-                    reasoning = "Forensic analysis detected digital alterations in the crisis image."
+                elif has_image and not has_text:
+                    if img_is_disaster and image_analysis.get("forensic_label") == "Tampered":
+                        multimodal_label = "MISINFORMATION — Manipulated Image"
+                        reasoning = "Forensic analysis detected digital alterations in this crisis image (no accompanying text was provided)."
+                    else:
+                        multimodal_label = image_analysis["semantic_label"]
                 elif is_uninformative_pairing:
                     multimodal_label = "SUSPICIOUS — Uninformative Caption on Crisis Image"
                     reasoning = "The image shows a real disaster, but the accompanying text provides no verifiable or actionable information."

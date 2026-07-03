@@ -16,6 +16,61 @@ const Dashboard = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // --- Admin: reset a user's password by email ---
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetStatus, setResetStatus] = useState(null); // { type: 'success' | 'error', message }
+  const [resetLoading, setResetLoading] = useState(false);
+
+  useEffect(() => {
+    try {
+      const userString = localStorage.getItem('user');
+      if (userString) {
+        const user = JSON.parse(userString);
+        setIsAdmin(user?.role === 'admin');
+      }
+    } catch (e) {
+      console.error("Error parsing user for admin check:", e);
+    }
+  }, []);
+
+  const handleAdminReset = async (e) => {
+    e.preventDefault();
+    setResetStatus(null);
+
+    const trimmedEmail = resetEmail.trim();
+    if (!trimmedEmail) {
+      setResetStatus({ type: 'error', message: 'Enter the user\'s email.' });
+      return;
+    }
+    if (!resetPassword || resetPassword.length < 6) {
+      setResetStatus({ type: 'error', message: 'New password must be at least 6 characters.' });
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || 'https://inas-00-factfusion-backend.hf.space';
+      const token = localStorage.getItem('accessToken');
+      const res = await axios.post(
+        `${apiBase}/api/admin/reset-password`,
+        { email: trimmedEmail, password: resetPassword },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setResetStatus({ type: 'success', message: res.data?.message || 'Password reset.' });
+      setResetEmail('');
+      setResetPassword('');
+    } catch (err) {
+      setResetStatus({
+        type: 'error',
+        message: err.response?.data?.error || err.message || 'Something went wrong.'
+      });
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   useEffect(() => {
     const controller = new AbortController();
     const fetchData = async () => {
@@ -224,6 +279,67 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+
+        {/* --- Admin: Reset User Password --- */}
+        {isAdmin && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white/[0.02] border border-white/10 rounded-[3rem] p-10 mb-8"
+          >
+            <h3 className="text-lg font-black mb-2 flex items-center gap-3 uppercase tracking-tighter">
+              <ShieldCheck className="text-blue-500" /> Reset User Password
+            </h3>
+            <p className="text-blue-100/40 text-sm mb-6 max-w-xl">
+              Admin-only. Sets a new password directly for a user who's locked out — no reset email involved.
+            </p>
+
+            <form onSubmit={handleAdminReset} className="grid md:grid-cols-3 gap-4 items-start">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-blue-400/60 uppercase tracking-widest ml-1 block">User Email</label>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 px-4 focus:border-blue-500/50 outline-none transition-all text-sm placeholder:text-white/10"
+                  placeholder="user@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-blue-400/60 uppercase tracking-widest ml-1 block">New Password</label>
+                <input
+                  type="password"
+                  value={resetPassword}
+                  onChange={(e) => setResetPassword(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 px-4 focus:border-blue-500/50 outline-none transition-all text-sm placeholder:text-white/10"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="flex flex-col justify-end h-full">
+                <button
+                  type="submit"
+                  disabled={resetLoading}
+                  className={`w-full py-3 rounded-2xl font-black text-xs uppercase tracking-[0.3em] text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-[0_0_30px_rgba(37,99,235,0.4)] transition-all active:scale-[0.98] ${resetLoading ? 'opacity-50 cursor-wait' : ''}`}
+                >
+                  {resetLoading ? 'Resetting...' : 'Reset Password'}
+                </button>
+              </div>
+            </form>
+
+            {resetStatus && (
+              <motion.div
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className={`mt-4 flex items-center gap-3 text-[10px] font-bold p-4 rounded-2xl border uppercase tracking-widest ${resetStatus.type === 'success'
+                    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                    : 'text-red-400 bg-red-500/10 border-red-500/20'
+                  }`}
+              >
+                {resetStatus.message}
+              </motion.div>
+            )}
+          </motion.div>
+        )}
 
         {/* --- System Intelligence Info Banner --- */}
         <motion.div

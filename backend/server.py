@@ -2,8 +2,6 @@ import os
 import datetime
 import hashlib
 import secrets
-import smtplib
-from email.mime.text import MIMEText
 from functools import wraps
 import jwt
 from bson.objectid import ObjectId
@@ -90,8 +88,6 @@ if not JWT_SECRET_KEY:
           "survive a server restart.")
 
 JWT_EXPIRY_DAYS = 7
-RESET_TOKEN_EXPIRY_MINUTES = 60
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
 
 def generate_token(user):
@@ -147,48 +143,6 @@ def get_optional_user():
     if not token:
         return None
     return decode_token(token)
-
-
-def send_email(to_email, subject, body):
-    """Sends a plain-text email via SMTP if SMTP_HOST/SMTP_USER/
-    SMTP_PASSWORD are set in the environment. If they're not configured yet
-    (e.g. local dev, or before you've wired up a mail provider), the email
-    is logged to the server console instead of sent, so the password-reset
-    flow can still be tested end-to-end — check your server logs for the
-    reset link. Set the SMTP_* env vars for this to actually deliver mail."""
-    print(f"[SEND-EMAIL] Called for {to_email}", flush=True)
-    smtp_host = os.environ.get('SMTP_HOST')
-    smtp_port = int(os.environ.get('SMTP_PORT', 587))
-    smtp_user = os.environ.get('SMTP_USER')
-    smtp_password = os.environ.get('SMTP_PASSWORD')
-    smtp_from = os.environ.get('SMTP_FROM', smtp_user)
-
-    print(
-        f"[SEND-EMAIL] SMTP_HOST={'SET' if smtp_host else 'MISSING'} "
-        f"SMTP_PORT={smtp_port} "
-        f"SMTP_USER={'SET' if smtp_user else 'MISSING'} "
-        f"SMTP_PASSWORD={'SET' if smtp_password else 'MISSING'}",
-        flush=True
-    )
-
-    if not (smtp_host and smtp_user and smtp_password):
-        print(f"[✉️ DEV MODE — SMTP not configured] Would email {to_email}:", flush=True)
-        print(f"    Subject: {subject}", flush=True)
-        print(f"    {body}", flush=True)
-        return
-
-    try:
-        msg = MIMEText(body)
-        msg['Subject'] = subject
-        msg['From'] = smtp_from
-        msg['To'] = to_email
-        with smtplib.SMTP(smtp_host, smtp_port) as smtp:
-            smtp.starttls()
-            smtp.login(smtp_user, smtp_password)
-            smtp.sendmail(smtp_from, [to_email], msg.as_string())
-        print(f"[SEND-EMAIL] ✅ Successfully sent to {to_email}", flush=True)
-    except Exception as e:
-        print(f"❌ Failed to send email to {to_email}: {e}", flush=True)
 
 
 try:
@@ -417,89 +371,6 @@ def login_user():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# --- PASSWORD RESET ROUTES ---
-@app.route('/api/forgot-password', methods=['POST'])
-def forgot_password():
-    print("[FORGOT-PASSWORD] Route hit", flush=True)
-    if db is None:
-        return jsonify({'error': 'Database not connected. Check MONGO_URI.'}), 500
-    try:
-        data = request.get_json() or {}
-        email = (data.get('email') or '').strip().lower()
-        print(f"[FORGOT-PASSWORD] Email received: {email}", flush=True)
-
-        if not email:
-            return jsonify({'error': 'Please enter your email.'}), 400
-
-        user = db.users.find_one({'email': email})
-        print(f"[FORGOT-PASSWORD] User found in DB: {bool(user)}", flush=True)
-        if user:
-            raw_token = secrets.token_urlsafe(32)
-            # Store only a hash of the token, never the raw value — same
-            # principle as password_hash. Anyone reading the DB can't reuse it.
-            token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
-            expires = datetime.datetime.utcnow() + datetime.timedelta(minutes=RESET_TOKEN_EXPIRY_MINUTES)
-
-            db.users.update_one(
-                {'_id': user['_id']},
-                {'$set': {'reset_token_hash': token_hash, 'reset_token_expires': expires}}
-            )
-
-            reset_link = f"{FRONTEND_URL}/reset-password?token={raw_token}"
-            send_email(
-                to_email=email,
-                subject="Reset your FactFusion password",
-                body=(
-                    "We received a request to reset your FactFusion password.\n\n"
-                    f"Reset it here (this link expires in {RESET_TOKEN_EXPIRY_MINUTES} minutes):\n"
-                    f"{reset_link}\n\n"
-                    "If you didn't request this, you can safely ignore this email."
-                )
-            )
-
-        # Always return the same response whether or not that email is
-        # registered — otherwise this endpoint could be used to check which
-        # emails have accounts.
-        return jsonify({'message': 'If an account exists for that email, a reset link has been sent.'}), 200
-    except Exception as e:
-        return jsonify({'error': 'Something went wrong. Please try again.'}), 500
-
-@app.route('/api/reset-password', methods=['POST'])
-def reset_password():
-    if db is None:
-        return jsonify({'error': 'Database not connected. Check MONGO_URI.'}), 500
-    try:
-        data = request.get_json() or {}
-        raw_token = data.get('token')
-        new_password = data.get('password')
-
-        if not raw_token:
-            return jsonify({'error': 'This reset link is invalid or has expired. Please request a new one.'}), 400
-        if not new_password or len(new_password) < 6:
-            return jsonify({'error': 'Access key must be at least 6 characters.'}), 400
-
-        token_hash = hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
-        user = db.users.find_one({
-            'reset_token_hash': token_hash,
-            'reset_token_expires': {'$gt': datetime.datetime.utcnow()}
-        })
-
-        if not user:
-            return jsonify({'error': 'This reset link is invalid or has expired. Please request a new one.'}), 400
-
-        new_hash = bcrypt.generate_password_hash(new_password).decode('utf-8')
-        db.users.update_one(
-            {'_id': user['_id']},
-            {
-                '$set': {'password_hash': new_hash},
-                '$unset': {'reset_token_hash': '', 'reset_token_expires': ''}
-            }
-        )
-
-        return jsonify({'message': 'Password updated. You can now log in.'}), 200
-    except Exception as e:
-        return jsonify({'error': 'Something went wrong. Please try again.'}), 500
-
 # --- HISTORY ROUTES ---
 @app.route('/api/v1/analysis-history', methods=['GET'])
 @require_auth
@@ -575,6 +446,44 @@ def get_single_analysis(id):
         return jsonify(clean_mongo_record(record)), 200
     except Exception as e:
         return jsonify({'error': 'Invalid ID format'}), 400
+
+# --- ADMIN ROUTES ---
+@app.route('/api/admin/reset-password', methods=['POST'])
+@require_auth
+def admin_reset_password():
+    """Admin-only password reset — replaces the self-service forgot/reset-
+    password flow. An admin sets a new password directly for a user who's
+    locked out, looked up by email (easier for an admin to type/find than
+    a raw ObjectId); no reset email, no token, no expiry window to manage."""
+    if db is None:
+        return jsonify({'error': 'Database not connected. Check MONGO_URI.'}), 500
+
+    if request.current_user.get('role') != 'admin':
+        return jsonify({'error': "You don't have permission to do this."}), 403
+
+    try:
+        data = request.get_json() or {}
+        email = (data.get('email') or '').strip().lower()
+        new_password = data.get('password')
+
+        if not email:
+            return jsonify({'error': 'Please enter the user\'s email.'}), 400
+        if not new_password or len(new_password) < 6:
+            return jsonify({'error': 'New password must be at least 6 characters.'}), 400
+
+        user = db.users.find_one({'email': email})
+        if not user:
+            return jsonify({'error': 'No user found with that email.'}), 404
+
+        new_hash = bcrypt.generate_password_hash(new_password).decode('utf-8')
+        db.users.update_one(
+            {'_id': user['_id']},
+            {'$set': {'password_hash': new_hash}}
+        )
+
+        return jsonify({'message': f"Password reset for {email}."}), 200
+    except Exception as e:
+        return jsonify({'error': 'Something went wrong. Please try again.'}), 500
 
 # --- SERVE UPLOADED IMAGES ---
 @app.route('/uploads/<filename>')

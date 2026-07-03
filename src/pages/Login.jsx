@@ -183,17 +183,6 @@ const Login = () => {
                   placeholder="••••••••"
                 />
               </div>
-              {isLogin && (
-                <div className="flex justify-end pt-1">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/forgot-password')}
-                    className="text-[10px] font-bold text-blue-400/50 hover:text-blue-400 uppercase tracking-widest transition-colors"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              )}
             </div>
 
             <AnimatePresence mode="wait">
