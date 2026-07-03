@@ -84,6 +84,22 @@ const Navbar = () => {
 
           {user ? (
             <div className="flex items-center gap-3">
+              {/* Who's logged in + role — pulled from the same user object stored at login */}
+              <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10">
+                <span className="text-blue-100/70 text-sm font-medium max-w-[160px] truncate">
+                  {user.email}
+                </span>
+                {user.role === 'admin' ? (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-[10px] font-black uppercase tracking-widest">
+                    <Shield size={11} /> Admin
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-[10px] font-black uppercase tracking-widest">
+                    User
+                  </span>
+                )}
+              </div>
+
               {/* This Button dynamically redirects based on role */}
               <Link
                 to={getDashboardLink()}
