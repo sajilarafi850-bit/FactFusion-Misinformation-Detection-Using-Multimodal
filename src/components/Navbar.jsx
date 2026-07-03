@@ -47,10 +47,10 @@ const Navbar = () => {
 
   return (
     <nav className="w-full fixed top-0 z-50 backdrop-blur-xl bg-[#020617]/70 border-b border-blue-500/10">
-      <div className="max-w-7xl mx-auto px-6 min-h-24 py-3 flex items-center justify-between flex-wrap gap-y-2">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
 
         {/* --- Logo Branding --- */}
-        <div className="flex items-center gap-3 group cursor-default">
+        <div className="flex items-center gap-3 group cursor-default shrink-0 mr-6">
           <div className="relative w-16 h-16 flex items-center justify-center">
             <img
               src={logo}
@@ -83,27 +83,8 @@ const Navbar = () => {
         <div className="flex items-center gap-4">
 
           {user ? (
-            <div className="flex flex-col-reverse items-end gap-2 lg:flex-row lg:items-center lg:gap-3 pl-4 md:border-l md:border-white/10">
-              {/* Who's logged in + role — pulled from the same user object stored at login */}
-              <div
-                className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 min-w-0"
-                title={user.email}
-              >
-                <span className="text-blue-100/70 text-sm font-medium max-w-[160px] lg:max-w-[180px] truncate">
-                  {user.email}
-                </span>
-                {user.role === 'admin' ? (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-[10px] font-black uppercase tracking-widest shrink-0">
-                    <Shield size={11} /> Admin
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-[10px] font-black uppercase tracking-widest shrink-0">
-                    User
-                  </span>
-                )}
-              </div>
-
-              {/* Dashboard + Logout — stays on its own row above the chip until lg */}
+            <div className="flex flex-col items-end gap-2 pl-4 border-l border-white/10">
+              {/* Dashboard + Logout — top row, always */}
               <div className="flex items-center gap-3">
                 <Link
                   to={getDashboardLink()}
@@ -120,6 +101,25 @@ const Navbar = () => {
                 >
                   <LogOut size={16} />
                 </button>
+              </div>
+
+              {/* Who's logged in + role — always shown beneath the button row */}
+              <div
+                className="flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 min-w-0"
+                title={user.email}
+              >
+                <span className="text-blue-100/70 text-xs font-medium max-w-[160px] truncate">
+                  {user.email}
+                </span>
+                {user.role === 'admin' ? (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-[9px] font-black uppercase tracking-widest shrink-0">
+                    <Shield size={10} /> Admin
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-400/20 text-blue-300 text-[9px] font-black uppercase tracking-widest shrink-0">
+                    User
+                  </span>
+                )}
               </div>
             </div>
           ) : (
