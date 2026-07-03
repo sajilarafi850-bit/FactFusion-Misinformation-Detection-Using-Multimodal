@@ -90,7 +90,10 @@ const Dashboard = () => {
             console.error("Error parsing user for dashboard query:", e);
           }
         }
-        const response = await axios.get(url, { signal: controller.signal });
+        const response = await axios.get(url, {
+          signal: controller.signal,
+          headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
+        });
         setData(Array.isArray(response.data) ? response.data : []);
       } catch (err) {
         if (axios.isCancel(err) || err?.name === 'CanceledError') return;
@@ -331,8 +334,8 @@ const Dashboard = () => {
                 initial={{ opacity: 0, x: -10 }}
                 animate={{ opacity: 1, x: 0 }}
                 className={`mt-4 flex items-center gap-3 text-[10px] font-bold p-4 rounded-2xl border uppercase tracking-widest ${resetStatus.type === 'success'
-                    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
-                    : 'text-red-400 bg-red-500/10 border-red-500/20'
+                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                  : 'text-red-400 bg-red-500/10 border-red-500/20'
                   }`}
               >
                 {resetStatus.message}

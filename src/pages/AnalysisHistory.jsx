@@ -26,6 +26,12 @@ const AnalysisHistory = () => {
   const getApiBase = () =>
     import.meta.env.VITE_API_BASE_URL || 'https://inas-00-factfusion-backend.hf.space';
 
+  // All protected routes need this — kept as one helper so the token is
+  // read fresh from localStorage on every call, not captured stale at mount.
+  const authHeader = () => ({
+    headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
+  });
+
   // ── FETCH ────────────────────────────────────────────────────────────────
   const fetchHistory = async (signal) => {
     setLoading(true);
@@ -44,7 +50,10 @@ const AnalysisHistory = () => {
           console.error("Error parsing user for history query:", e);
         }
       }
-      const response = await axios.get(url, { signal });
+      const response = await axios.get(url, {
+        signal,
+        ...authHeader()
+      });
       const data = Array.isArray(response.data) ? response.data : [];
       setHistory(data);
     } catch (err) {
@@ -65,7 +74,7 @@ const AnalysisHistory = () => {
   // ── DELETE LOGIC ─────────────────────────────────────────────────────────
   const deleteOne = async (id) => {
     try {
-      await axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`);
+      await axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, authHeader());
       setHistory(prev => prev.filter(item => (item.id || item._id) !== id));
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
     } catch (err) {
@@ -80,7 +89,7 @@ const AnalysisHistory = () => {
     setDeleting(true);
     try {
       await Promise.all([...selectedIds].map(id =>
-        axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`)
+        axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, authHeader())
       ));
       setHistory(prev => prev.filter(item => !selectedIds.has(item.id || item._id)));
       setSelectedIds(new Set());
@@ -97,7 +106,7 @@ const AnalysisHistory = () => {
     setDeleting(true);
     try {
       await Promise.all(history.map(item =>
-        axios.delete(`${getApiBase()}/api/v1/analysis-history/${item.id || item._id}`)
+        axios.delete(`${getApiBase()}/api/v1/analysis-history/${item.id || item._id}`, authHeader())
       ));
       setHistory([]);
       setSelectedIds(new Set());
@@ -411,10 +420,10 @@ const AnalysisHistory = () => {
                       </td>
                       <td className="px-8 py-6 text-right">
                         <span className={`font-mono text-xl font-black ${item.credibility_score > SCORE_THRESHOLDS.HIGH
-                            ? 'text-emerald-400'
-                            : item.credibility_score > SCORE_THRESHOLDS.MID
-                              ? 'text-amber-400'
-                              : 'text-red-400'
+                          ? 'text-emerald-400'
+                          : item.credibility_score > SCORE_THRESHOLDS.MID
+                            ? 'text-amber-400'
+                            : 'text-red-400'
                           }`}>
                           {((item.credibility_score || 0) * 100).toFixed(0)}%
                         </span>
