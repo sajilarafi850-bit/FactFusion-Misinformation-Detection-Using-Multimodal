@@ -17,13 +17,14 @@ import { getVerdictCategory, getVerdictColor, SCORE_THRESHOLDS } from '../utils/
 const AnalysisHistory = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [deleting, setDeleting] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [pageSize, setPageSize] = useState(25);
+  const [page, setPage] = useState(0); // 0-indexed
 
-  const PAGE_SIZE = 20;
+  const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
   const COLORS = ['#10b981', '#ef4444', '#9ca3af'];
 
   const getApiBase = () =>
@@ -35,9 +36,9 @@ const AnalysisHistory = () => {
     headers: { Authorization: `Bearer ${localStorage.getItem('accessToken')}` }
   });
 
-  const buildHistoryUrl = (skip) => {
+  const buildHistoryUrl = (skip, limit) => {
     const userString = localStorage.getItem('user');
-    let url = `${getApiBase()}/api/v1/analysis-history?limit=${PAGE_SIZE}&skip=${skip}`;
+    let url = `${getApiBase()}/api/v1/analysis-history?limit=${limit}&skip=${skip}`;
     if (userString) {
       try {
         const user = JSON.parse(userString);
@@ -52,11 +53,14 @@ const AnalysisHistory = () => {
     return url;
   };
 
-  // ── FETCH (first page / refresh) ────────────────────────────────────────
-  const fetchHistory = async (signal) => {
+  // ── FETCH current page ───────────────────────────────────────────────────
+  const fetchHistory = async (signal, targetPage = page, targetPageSize = pageSize) => {
     setLoading(true);
     try {
-      const response = await axios.get(buildHistoryUrl(0), { signal, ...authHeader() });
+      const response = await axios.get(
+        buildHistoryUrl(targetPage * targetPageSize, targetPageSize),
+        { signal, ...authHeader() }
+      );
       const data = Array.isArray(response.data) ? response.data : [];
       setHistory(data);
       const totalHeader = response.headers?.['x-total-count'];
@@ -70,57 +74,37 @@ const AnalysisHistory = () => {
     }
   };
 
-  // ── FETCH (next page — infinite scroll) ─────────────────────────────────
-  const fetchMore = async () => {
-    if (loadingMore || history.length >= totalCount) return;
-    setLoadingMore(true);
-    try {
-      const response = await axios.get(buildHistoryUrl(history.length), authHeader());
-      const data = Array.isArray(response.data) ? response.data : [];
-      setHistory(prev => {
-        // Avoid duplicate rows if a poll refresh and a scroll-load land close together
-        const existingIds = new Set(prev.map(item => item.id || item._id));
-        const merged = [...prev, ...data.filter(item => !existingIds.has(item.id || item._id))];
-        return merged;
-      });
-      const totalHeader = response.headers?.['x-total-count'];
-      if (totalHeader) setTotalCount(parseInt(totalHeader, 10));
-    } catch (err) {
-      console.error("Load more failed:", err.message);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-
+  // Refetch whenever the page or page size changes
   useEffect(() => {
     const controller = new AbortController();
-    fetchHistory(controller.signal);
+    fetchHistory(controller.signal, page, pageSize);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize]);
 
-    // Poll for newly added analyses every 15s so the list reflects new
-    // scans without a manual refresh. Only refreshes the first page —
-    // scroll-loaded pages stay as-is, so we don't yank the user's scroll
-    // position around while they're browsing further down.
+  // Poll the current page every 15s so newly added analyses show up without
+  // a manual refresh — stays on whichever page the admin is currently viewing.
+  useEffect(() => {
+    const controller = new AbortController();
     const pollId = setInterval(() => {
-      fetchHistory(controller.signal);
+      fetchHistory(controller.signal, page, pageSize);
     }, 15000);
-
     return () => {
       controller.abort();
       clearInterval(pollId);
     };
-  }, []);
-
-  // ── INFINITE SCROLL ──────────────────────────────────────────────────────
-  useEffect(() => {
-    const handleScroll = () => {
-      const nearBottom =
-        window.innerHeight + window.scrollY >= document.body.offsetHeight - 400;
-      if (nearBottom) fetchMore();
-    };
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [history, totalCount, loadingMore]);
+  }, [page, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const rangeStart = totalCount === 0 ? 0 : page * pageSize + 1;
+  const rangeEnd = Math.min(totalCount, (page + 1) * pageSize);
+
+  const goToPage = (newPage) => {
+    if (newPage < 0 || newPage >= totalPages) return;
+    setSelectedIds(new Set()); // selections shouldn't carry across pages
+    setPage(newPage);
+  };
 
   // ── DELETE LOGIC ─────────────────────────────────────────────────────────
   const deleteOne = async (id) => {
@@ -270,7 +254,7 @@ const AnalysisHistory = () => {
               />
             </div>
             <button
-              onClick={fetchHistory}
+              onClick={() => fetchHistory(undefined, page, pageSize)}
               className="p-4 bg-blue-600/10 border border-blue-500/20 rounded-2xl hover:bg-blue-600/20 text-blue-400 transition-all active:scale-95"
               title="Refresh"
             >
@@ -497,23 +481,57 @@ const AnalysisHistory = () => {
               </tbody>
             </table>
 
-            {!loading && (
-              <div className="py-8 text-center">
-                {loadingMore ? (
-                  <span className="text-[11px] font-black text-blue-400/60 uppercase tracking-widest animate-pulse">
-                    Loading more records...
-                  </span>
-                ) : history.length < totalCount ? (
-                  <span className="text-[11px] font-medium text-white/20">
-                    Showing {history.length} of {totalCount} — scroll for more
-                  </span>
-                ) : history.length > 0 ? (
-                  <span className="text-[11px] font-medium text-white/20">
-                    Showing all {totalCount} records
-                  </span>
-                ) : null}
+            {/* --- Pagination Bar --- */}
+            <div className="flex items-center justify-between gap-4 px-8 py-5 border-t border-white/5 flex-wrap">
+              <div className="flex items-center gap-2">
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(parseInt(e.target.value, 10));
+                    setPage(0); // page size change resets to first page
+                  }}
+                  className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:border-blue-500/50 cursor-pointer"
+                >
+                  {PAGE_SIZE_OPTIONS.map(size => (
+                    <option key={size} value={size} className="bg-[#020617]">{size}</option>
+                  ))}
+                </select>
+
+                <span className="text-sm text-white/40 font-medium ml-2">
+                  {rangeStart}–{rangeEnd} of {totalCount}
+                </span>
+
+                <button
+                  onClick={() => fetchHistory(undefined, page, pageSize)}
+                  className="p-2 rounded-lg hover:bg-white/5 text-blue-400 transition-all"
+                  title="Refresh"
+                >
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                </button>
               </div>
-            )}
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => goToPage(page - 1)}
+                  disabled={page === 0}
+                  className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                  title="Previous page"
+                >
+                  &lsaquo;
+                </button>
+                <span className="text-sm text-white/40 font-medium px-2">
+                  Page {totalCount === 0 ? 0 : page + 1} of {totalPages}
+                </span>
+                <button
+                  onClick={() => goToPage(page + 1)}
+                  disabled={page + 1 >= totalPages}
+                  className="p-2 rounded-lg hover:bg-white/5 text-white/60 hover:text-white disabled:opacity-20 disabled:cursor-not-allowed transition-all"
+                  title="Next page"
+                >
+                  &rsaquo;
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
