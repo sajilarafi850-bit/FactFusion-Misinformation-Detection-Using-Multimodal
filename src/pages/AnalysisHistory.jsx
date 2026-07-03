@@ -30,6 +30,14 @@ const AnalysisHistory = () => {
   const getApiBase = () =>
     import.meta.env.VITE_API_BASE_URL || 'https://inas-00-factfusion-backend.hf.space';
 
+  // /api/v1/analysis-history and its delete route both require a logged-in
+  // user (@require_auth on the backend) — without this header every request
+  // gets a silent 401 and the page just renders empty.
+  const authHeaders = () => {
+    const token = localStorage.getItem('accessToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   // ── FETCH ────────────────────────────────────────────────────────────────
   // skip=0 (default) replaces the list — used on initial load, refresh, and
   // whenever the search query changes. skip>0 appends — used by infinite scroll.
@@ -51,7 +59,7 @@ const AnalysisHistory = () => {
           console.error("Error parsing user for history query:", e);
         }
       }
-      const response = await axios.get(url, { signal });
+      const response = await axios.get(url, { signal, headers: authHeaders() });
       const data = Array.isArray(response.data) ? response.data : [];
       const total = parseInt(response.headers['x-total-count'], 10);
       if (!Number.isNaN(total)) setTotalCount(total);
@@ -107,8 +115,7 @@ const AnalysisHistory = () => {
   // ── DELETE LOGIC ─────────────────────────────────────────────────────────
   const deleteOne = async (id) => {
     try {
-      await axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`);
-      setHistory(prev => prev.filter(item => (item.id || item._id) !== id));
+      await axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, { headers: authHeaders() });
       setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next; });
       setTotalCount(prev => Math.max(0, prev - 1));
     } catch (err) {
@@ -123,7 +130,7 @@ const AnalysisHistory = () => {
     setDeleting(true);
     try {
       await Promise.all([...selectedIds].map(id =>
-        axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`)
+        axios.delete(`${getApiBase()}/api/v1/analysis-history/${id}`, { headers: authHeaders() })
       ));
       setHistory(prev => prev.filter(item => !selectedIds.has(item.id || item._id)));
       setTotalCount(prev => Math.max(0, prev - selectedIds.size));
@@ -148,7 +155,7 @@ const AnalysisHistory = () => {
     setDeleting(true);
     try {
       await Promise.all(history.map(item =>
-        axios.delete(`${getApiBase()}/api/v1/analysis-history/${item.id || item._id}`)
+        axios.delete(`${getApiBase()}/api/v1/analysis-history/${item.id || item._id}`, { headers: authHeaders() })
       ));
       setTotalCount(prev => Math.max(0, prev - history.length));
       setHistory([]);
