@@ -10,6 +10,12 @@ class XAIEngine:
     # reasoning, especially on longer disaster reports.
     TOP_N_TOKENS = 15
 
+    # SHAP text explainer gets noticeably slower (and RoBERTa truncates
+    # anyway past its max length) on very long inputs. Capping the words fed
+    # into attribution keeps analysis responsive without losing accuracy —
+    # the model's own prediction already only "sees" roughly this much text.
+    MAX_ATTRIBUTION_WORDS = 150
+
     def __init__(self, text_model=None, image_model=None, tokenizer=None, background_tensor=None):
         self.text_model  = text_model
         self.image_model = image_model
@@ -183,6 +189,15 @@ class XAIEngine:
         Label mapping: {0: "Non-Informative", 1: "Informative", 2: "OOD"}
         SHAP index 1 = "Informative" — correct class to explain disaster-relevant content.
         """
+        # Guard against very long inputs (100+/200+ word reports) — SHAP's
+        # partition explainer slows down substantially as text grows, and
+        # RoBERTa truncates past its own max length anyway, so trimming here
+        # keeps response times predictable without changing what the model
+        # actually "sees" and explains.
+        words = text.split()
+        if len(words) > self.MAX_ATTRIBUTION_WORDS:
+            text = " ".join(words[:self.MAX_ATTRIBUTION_WORDS])
+
         # PATH 1 — SHAP (only if text_explainer was initialised at init)
         if self.text_explainer is not None:
             try:
