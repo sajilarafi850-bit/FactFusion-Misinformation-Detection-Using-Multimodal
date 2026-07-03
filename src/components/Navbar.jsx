@@ -42,7 +42,7 @@ const Navbar = () => {
   // Logic to determine which dashboard to show based on user role
   const getDashboardLink = () => {
     if (!user) return '/login';
-    return user.role === 'admin' ? '/admin-dashboard' : '/team-dashboard';
+    return '/team-dashboard';
   };
 
   return (
