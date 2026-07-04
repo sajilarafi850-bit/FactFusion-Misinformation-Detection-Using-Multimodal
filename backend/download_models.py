@@ -9,7 +9,22 @@ REPO_ID = "Inas-00/factfusion-weights"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TARGET_DIR = os.path.join(BASE_DIR, "models")
 
+def _print_installed_versions():
+    """Debug helper: print actually-installed versions on this environment.
+    pip's dependency resolver can silently backtrack to older transformers/
+    tokenizers versions if a pinned package (like torch) conflicts with the
+    latest release's requirements — this makes that visible in the Space logs."""
+    try:
+        import transformers
+        import tokenizers
+        import torch
+        print(f"[VERSION CHECK] transformers={transformers.__version__} "
+              f"tokenizers={tokenizers.__version__} torch={torch.__version__}")
+    except Exception as e:
+        print(f"[VERSION CHECK] Failed to read versions: {e}")
+
 def download_weights():
+    _print_installed_versions()
     print(f"[*] Initializing connection to Hugging Face: {REPO_ID}...")
     print(f"[*] Target model directory: {TARGET_DIR}")
     os.makedirs(TARGET_DIR, exist_ok=True)
