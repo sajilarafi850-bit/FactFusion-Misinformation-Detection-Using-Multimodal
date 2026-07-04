@@ -199,22 +199,28 @@ class XAIEngine:
         while short, complete, low-signal words near the start of the text
         (which stay as one token) rank higher by comparison — producing a
         list that looks arbitrary/"messy" rather than genuinely important.
-        This merges continuation pieces (tokens without the leading "Ġ"
-        word-start marker) back onto the previous token and combines their
-        weights, so the final list is whole, readable words ranked by their
-        true combined importance.
+        This merges continuation pieces back onto the previous token and
+        combines their weights, so the final list is whole, readable words
+        ranked by their true combined importance.
+
+        Word-start detection handles BOTH tokenization conventions seen in
+        practice: the raw HF tokenizer marks a new word with a "Ġ" prefix,
+        while SHAP's own text masker instead prefixes new words with a plain
+        leading space (" "). Checking only "Ġ" caused every SHAP token to
+        register as a "continuation" of the first one, merging the entire
+        sentence into a single giant token — this checks both.
         """
         merged = []
         for t, w in zip(tokens, weights):
-            is_continuation = merged and not t.startswith("Ġ") and t not in ("Ġ",)
-            clean = t.replace("Ġ", "")
+            is_word_start = (not merged) or t.startswith("Ġ") or t.startswith(" ")
+            clean = t.lstrip("Ġ").lstrip(" ")
             if not clean.strip():
                 continue
-            if is_continuation:
+            if is_word_start:
+                merged.append({"token": clean, "weight": float(w)})
+            else:
                 merged[-1]["token"] += clean
                 merged[-1]["weight"] += float(w)
-            else:
-                merged.append({"token": clean, "weight": float(w)})
 
         for m in merged:
             m["weight"] = round(m["weight"], 3)
