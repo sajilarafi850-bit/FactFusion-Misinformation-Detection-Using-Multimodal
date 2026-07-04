@@ -10,7 +10,9 @@ import {
   AlertCircle,
   FileText,
   Cpu,
-  Bot
+  Bot,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 const COMMON_EMAIL_DOMAINS = [
@@ -63,6 +65,7 @@ const Login = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [domainSuggestion, setDomainSuggestion] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const backgroundIcons = [
     { Icon: FileText, x: "10%", y: "20%", delay: 0, color: "text-blue-500/10" },
@@ -235,12 +238,21 @@ const Login = () => {
               <div className="relative group">
                 <LockIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500/30 group-focus-within:text-blue-400 transition-colors" size={18} />
                 <input
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:border-blue-500/50 outline-none transition-all text-sm placeholder:text-white/10"
+                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-12 focus:border-blue-500/50 outline-none transition-all text-sm placeholder:text-white/10"
                   placeholder="••••••••"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-500/30 hover:text-blue-400 transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPassword ? 'Hide access key' : 'Show access key'}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 
@@ -256,12 +268,21 @@ const Login = () => {
                   <div className="relative group">
                     <LockIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500/30 group-focus-within:text-blue-400 transition-colors" size={18} />
                     <input
-                      type="password"
+                      type={showPassword ? 'text' : 'password'}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 focus:border-blue-500/50 outline-none transition-all text-sm"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-12 focus:border-blue-500/50 outline-none transition-all text-sm"
                       placeholder="••••••••"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-500/30 hover:text-blue-400 transition-colors"
+                      tabIndex={-1}
+                      aria-label={showPassword ? 'Hide access key' : 'Show access key'}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
                   </div>
                 </motion.div>
               )}

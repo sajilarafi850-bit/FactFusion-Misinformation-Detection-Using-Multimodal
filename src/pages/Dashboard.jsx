@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   ShieldCheck, Zap, AlertTriangle,
-  TrendingUp, Cpu, Database, FileText, Share2
+  TrendingUp, Cpu, Database, FileText, Share2, Eye, EyeOff
 } from 'lucide-react';
 
 // Shared Util Import
@@ -22,6 +22,7 @@ const Dashboard = () => {
   const [resetPassword, setResetPassword] = useState('');
   const [resetStatus, setResetStatus] = useState(null); // { type: 'success' | 'error', message }
   const [resetLoading, setResetLoading] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   useEffect(() => {
     try {
@@ -324,13 +325,24 @@ const Dashboard = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-blue-400/60 uppercase tracking-widest ml-1 block">New Password</label>
-                <input
-                  type="password"
-                  value={resetPassword}
-                  onChange={(e) => setResetPassword(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 px-4 focus:border-blue-500/50 outline-none transition-all text-sm placeholder:text-white/10"
-                  placeholder="••••••••"
-                />
+                <div className="relative">
+                  <input
+                    type={showResetPassword ? 'text' : 'password'}
+                    value={resetPassword}
+                    onChange={(e) => setResetPassword(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-4 pr-12 focus:border-blue-500/50 outline-none transition-all text-sm placeholder:text-white/10"
+                    placeholder="••••••••"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowResetPassword((prev) => !prev)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-blue-500/30 hover:text-blue-400 transition-colors"
+                    tabIndex={-1}
+                    aria-label={showResetPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </div>
               <div className="flex flex-col justify-end h-full">
                 <button
