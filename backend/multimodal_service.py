@@ -41,8 +41,15 @@ class DisasterDetector(nn.Module):
         return self.classifier(self.backbone(x))
 
 class MultimodalService:
+    # Thresholds exactly as used in the training/eval notebook
+    # (Multimodal_Fusion__4_.ipynb, CELL 5). Keep in sync with the notebook.
+    SEMANTIC_THRESHOLD = 0.55
+    FORENSIC_THRESHOLD = 0.45
+
     def __init__(self):
         print(f"Loading Multimodal Models on {device}...")
+        # index 0 = Real Crisis / Disaster, index 1 = Normal / Non-Crisis
+        # (matches sem_ckpt['class_names'] ordering used in the notebook)
         self.semantic_classes = ['Real Crisis / Disaster', 'Normal / Non-Crisis']
         self.forensic_classes = ['Authentic', 'Tampered']
         
@@ -108,7 +115,7 @@ class MultimodalService:
             ToTensorV2()
         ])
         
-        self.serpapi_key = os.environ.get('SERPAPI_KEY') or "1906a92a843a10c1324d6dcb8e6ae3972d4291a0a3143f3ce3375ffecdba6094"
+        self.serpapi_key = os.environ.get('SERPAPI_KEY') or "ea67bafde46f86b4ee7b9a14ed018040c61b2514acb6c05872c771cf9f4c7594"
 
     def _generate_clip_heatmap(self, image_path, num_patches=7):
         """
@@ -218,9 +225,12 @@ class MultimodalService:
             if has_image:
                 img_tensor = self.preprocess_image(image_path)
                 
+                img_disaster_conf = 0.0
                 if self.semantic_model is not None:
                     with torch.no_grad():
                         sem_probs = torch.softmax(self.semantic_model(img_tensor), dim=1)[0]
+                    # index 0 = disaster class probability (notebook: sem_probs[0])
+                    img_disaster_conf = sem_probs[0].item()
                     sem_pred     = sem_probs.argmax().item()
                     sem_conf_val = sem_probs[sem_pred].item()
                 elif self.clip is not None:
@@ -232,24 +242,34 @@ class MultimodalService:
                         print(f"CLIP semantic result: {top['label'][:40]} — score={top['score']:.2f}")
                         sem_pred     = 0 if top['label'] == disaster_label else 1
                         sem_conf_val = top['score']
+                        img_disaster_conf = sem_conf_val if sem_pred == 0 else (1.0 - sem_conf_val)
                     except Exception as e:
                         print(f"CLIP fallback failed: {e}")
                         sem_pred = 1
+                        sem_conf_val = 0.5
                 else:
                     sem_pred = 1
+                    sem_conf_val = 0.5
 
-                # Exact model output — no threshold overrides
                 image_analysis["semantic_label"]      = self.semantic_classes[sem_pred]
                 image_analysis["semantic_confidence"] = round(float(sem_conf_val), 4)
-                img_is_disaster = (sem_pred == 0)
+
+                # Notebook rule: img_is_disaster = img_disaster_conf > SEMANTIC_THRESHOLD
+                # (threshold on the disaster-class probability, NOT plain argmax)
+                img_is_disaster = img_disaster_conf > self.SEMANTIC_THRESHOLD
 
                 if img_is_disaster:
                     if self.forensic_model is not None:
                         with torch.no_grad():
                             for_probs = torch.softmax(self.forensic_model(img_tensor), dim=1)[0]
                         for_pred     = for_probs.argmax().item()
-                        for_conf_val = for_probs[for_pred].item()
-                        image_analysis["forensic_label"]      = self.forensic_classes[for_pred]
+                        for_conf_val = for_probs.max().item()
+
+                        # Notebook rule: below FORENSIC_THRESHOLD -> 'Uncertain'
+                        if for_conf_val < self.FORENSIC_THRESHOLD:
+                            image_analysis["forensic_label"] = "Uncertain"
+                        else:
+                            image_analysis["forensic_label"] = self.forensic_classes[for_pred]
                         image_analysis["forensic_confidence"] = round(float(for_conf_val), 4)
                     else:
                         image_analysis["forensic_label"]      = "N/A"
@@ -302,11 +322,6 @@ class MultimodalService:
                 reasoning = "Please provide image or text input."
             elif has_image and not has_text:
                 if img_is_disaster and image_analysis.get("forensic_label") == "Tampered":
-                    # Same rule the multimodal branch already applies further down —
-                    # a manipulated crisis image should never present as a plain
-                    # "Real Crisis / Disaster" verdict just because no caption was
-                    # supplied. Without this, tampered image-only submissions were
-                    # silently counted as credible/Informative downstream.
                     multimodal_label = "MISINFORMATION — Manipulated Image"
                     reasoning = (
                         "Forensic analysis detected digital alterations in this crisis "
@@ -326,70 +341,73 @@ class MultimodalService:
                 multimodal_label = text_analysis["text_label"]
                 reasoning = "Text-only audit completed. Results reflect linguistic integrity only."
             else:
+                # ── Exact port of notebook multimodal_analyze() verdict logic
+                # (Multimodal_Fusion__4_.ipynb, CELL 5). Priority order and
+                # red-flag definition must stay identical to the notebook.
                 temporal_warnings  = self.temporal_check(image_path, caption)
                 has_temporal_issue = len(temporal_warnings) > 0
-                
-                cross_modal_mismatch = False
-                if image_specific_label and caption and text_analysis["text_label"] == "Informative":
-                    if image_specific_label.lower() not in caption.lower():
-                        cross_modal_mismatch = True
 
-                # img_text_mismatch covers content-mismatch signals that are NOT
-                # already represented by a dedicated, more specific flag below:
-                # (a) cross_modal_mismatch — CLIP's specific label disagrees with the caption
-                # (b) non-crisis image paired with informative disaster text
-                # NOTE: "disaster image + Non-Informative text" is intentionally excluded
-                # here — that exact scenario already produces is_uninformative_pairing, and
-                # "disaster image + OOD text" gets its own dedicated verdict branch below.
-                # Counting them again here was double-flagging every rumor/OOD case and
-                # forcing them into the generic HIGH RISK bucket before they could ever
-                # reach their specific verdict.
-                img_text_mismatch = (
-                    cross_modal_mismatch
-                    or (not img_is_disaster and text_analysis["text_label"] == "Informative")
-                )
+                txt_is_informative    = text_analysis["text_label"] == "Informative"
+                txt_is_noninformative = text_analysis["text_label"] == "Non-Informative"
+                txt_is_ood             = text_analysis["text_label"] == "OOD"
 
+                # Notebook: conflict = img_is_disaster != txt_is_informative
+                conflict = img_is_disaster != txt_is_informative
+
+                # Notebook red-flag count
                 flags = []
-                if image_analysis["forensic_label"] == "Tampered":    flags.append("Manipulated Image")
-                if has_temporal_issue:                                 flags.append("Old Content")
-                if img_text_mismatch:                                  flags.append("Mismatch")
-                if is_uninformative_pairing:                           flags.append("Uninformative Caption")
+                if has_temporal_issue:                                    flags.append("Old Content")
+                if image_analysis["forensic_label"] == "Tampered":        flags.append("Manipulated Image")
+                if txt_is_noninformative:                                  flags.append("Non-Informative Text")
+                if conflict:                                               flags.append("Image/Text Conflict")
+                red_flags = len(flags)
 
-                if len(flags) >= 2:
+                # 1. TAMPERED IMAGE — highest priority, checked before red_flags count
+                if image_analysis["forensic_label"] == "Tampered":
+                    multimodal_label = "MISINFORMATION — Manipulated Image"
+                    reasoning = "Forensic analysis detected digital alterations in this crisis image."
+
+                # 2. Multiple red flags
+                elif red_flags >= 2:
                     multimodal_label = "HIGH RISK — Multiple Flags Detected"
                     reasoning = f"Multiple red flags detected: {', '.join(flags)}."
+
+                # 3. OOD text + disaster image
+                elif txt_is_ood and img_is_disaster:
+                    multimodal_label = "SUSPICIOUS — Disaster Image with Unrelated Caption"
+                    reasoning = "The image shows a real disaster, but the caption is completely unrelated to any crisis context."
+
+                # 4. Not disaster + OOD text
+                elif not img_is_disaster and txt_is_ood:
+                    multimodal_label = "NOT RELEVANT"
+                    reasoning = "Neither image nor text contains crisis-related content."
+
+                # 5. Temporal issue
                 elif has_temporal_issue:
                     multimodal_label = "MISINFORMATION — Old Content Recirculated as New"
                     reasoning = f"Temporal discrepancy detected: {temporal_warnings[0]}."
-                elif has_image and not has_text:
-                    if img_is_disaster and image_analysis.get("forensic_label") == "Tampered":
-                        multimodal_label = "MISINFORMATION — Manipulated Image"
-                        reasoning = "Forensic analysis detected digital alterations in this crisis image (no accompanying text was provided)."
-                    else:
-                        multimodal_label = image_analysis["semantic_label"]
-                elif is_uninformative_pairing:
-                    multimodal_label = "SUSPICIOUS — Uninformative Caption on Crisis Image"
-                    reasoning = "The image shows a real disaster, but the accompanying text provides no verifiable or actionable information."
-                elif cross_modal_mismatch:
-                    multimodal_label = "SUSPICIOUS — Image and Text Mismatch"
-                    reasoning = f"Visual content depicts {image_specific_label} but text describes a different context."
-                elif img_is_disaster and text_analysis["text_label"] == "OOD":
-                    multimodal_label = "SUSPICIOUS — Disaster Image with Unrelated Caption"
-                    reasoning = "The image shows a real disaster, but the caption is completely unrelated to any crisis context."
-                elif not img_is_disaster and text_analysis["text_label"] == "Non-Informative":
-                    multimodal_label = "NOT RELEVANT"
-                    reasoning = "Both image and text are classified as non-crisis content."
-                elif not img_is_disaster and text_analysis["text_label"] == "OOD":
-                    multimodal_label = "NOT RELEVANT"
-                    reasoning = "Neither image nor text contains crisis-related content."
-                elif not img_is_disaster and text_analysis["text_label"] == "Informative":
+
+                # 6. Not disaster + informative text
+                elif not img_is_disaster and txt_is_informative:
                     multimodal_label = "SUSPICIOUS — Image and Text Mismatch"
                     reasoning = "Visual content is non-crisis, but the text describes a disaster event, indicating a potential mismatch."
-                elif img_is_disaster and image_analysis["forensic_label"] == "Authentic" and text_analysis["text_label"] == "Informative":
+
+                # 7. Disaster + non-informative text
+                elif img_is_disaster and txt_is_noninformative:
+                    multimodal_label = "SUSPICIOUS — Uninformative Caption on Crisis Image"
+                    reasoning = "The image shows a real disaster, but the accompanying text provides no verifiable or actionable information."
+
+                # 8. Disaster + informative text
+                elif img_is_disaster and txt_is_informative:
                     multimodal_label = "CREDIBLE — Real Disaster, Authentic"
                     reasoning = "Consistent, authentic evidence from both visual and textual modalities."
 
-                fusion_score = round(max(0.0, 1.0 - 0.25 * len(flags)), 3)
+                # 9. Fallback
+                else:
+                    multimodal_label = "UNCERTAIN"
+                    reasoning = "Analysis was inconclusive based on the available signals."
+
+                fusion_score = round(max(0.0, 1.0 - 0.25 * red_flags), 3)
 
             # --- SCORES: raw model confidences, no manipulation ---
             if has_image:
