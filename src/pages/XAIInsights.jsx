@@ -311,7 +311,13 @@ const XAIInsights = () => {
                     </div>
 
                     <div
-                      className="max-h-72 overflow-y-auto"
+                      className="max-h-72 overflow-y-auto
+                        [&::-webkit-scrollbar]:w-2
+                        [&::-webkit-scrollbar-track]:bg-transparent
+                        [&::-webkit-scrollbar-thumb]:bg-blue-500/30
+                        [&::-webkit-scrollbar-thumb]:rounded-full
+                        [&::-webkit-scrollbar-thumb:hover]:bg-blue-500/50"
+                      style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(59,130,246,0.3) transparent' }}
                       onScroll={(e) => {
                         const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
                         // Trigger the next page a little before hitting the
