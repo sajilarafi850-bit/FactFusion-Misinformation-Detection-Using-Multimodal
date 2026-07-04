@@ -11,7 +11,7 @@ body {
   margin: 0;
   padding: 0;
   background-color: #020617;
-  overflow-x: hidden; 
+  overflow-x: hidden;
 }
 
 /* Ensure React root is a flex container as tall as the screen */
@@ -19,5 +19,29 @@ body {
   width: 100%;
   display: flex;
   flex-direction: column;
-  min-height: 100vh; 
+  min-height: 100vh;
+}
+
+/* Global page scrollbar - dark theme with blue accent */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: #1e293b #020617;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #020617;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #3b82f6, #1e40af);
+  border-radius: 8px;
+  border: 2px solid #020617;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
 }
