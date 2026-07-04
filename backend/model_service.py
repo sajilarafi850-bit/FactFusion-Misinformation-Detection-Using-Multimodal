@@ -52,7 +52,7 @@ class ModelLoader:
         ]
 
         base_dir = os.path.dirname(os.path.abspath(__file__))
-        model_path = os.path.join(base_dir, 'models', 'text_model_v2')
+        model_path = os.path.join(base_dir, 'models', 'Text_Final_Model')
         
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=True)
