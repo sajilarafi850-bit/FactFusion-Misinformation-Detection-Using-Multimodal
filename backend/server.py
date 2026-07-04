@@ -383,7 +383,7 @@ def list_analysis_history():
     if db is None:
         return jsonify({'error': 'Database not connected'}), 500
     try:
-        limit = min(int(request.args.get('limit', 20)), 50)  # default 20, hard cap 50 per page
+        limit = min(int(request.args.get('limit', 20)), 100000) 
         skip = max(int(request.args.get('skip', 0)), 0)
 
         is_admin = request.current_user.get('role') == 'admin'

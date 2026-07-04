@@ -250,7 +250,7 @@ const AnalysisHistory = () => {
           onChange={(e) => changePageSize(Number(e.target.value))}
           className="appearance-none bg-white/5 border border-white/10 rounded-xl pl-3 pr-8 py-1.5 text-xs font-bold text-blue-100/70 outline-none focus:border-blue-500/50 cursor-pointer"
         >
-          {[10, 25, 50].map(n => (
+          {[10, 25, 50, 100].map(n => (
             <option key={n} value={n} className="bg-[#0a1128] text-white">{n}</option>
           ))}
         </select>
