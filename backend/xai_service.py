@@ -63,8 +63,16 @@ class XAIEngine:
                     return_all_scores=True,
                     device=-1  # CPU — matches Railway
                 )
-                self.text_explainer = shap.Explainer(pipe)
-                print("[XAI] SHAP Explainer ready for RoBERTa")
+                # IMPORTANT: without an explicit masker, shap.Explainer(pipe)
+                # can fail to detect how to split the input into sub-features
+                # and instead treats the whole input string as a single
+                # atomic "token" — producing exactly one SHAP value for the
+                # entire sentence instead of one per word. Passing an
+                # explicit Text masker built from the tokenizer forces SHAP
+                # to properly tokenize the input before explaining it.
+                masker = shap.maskers.Text(tokenizer)
+                self.text_explainer = shap.Explainer(pipe, masker)
+                print("[XAI] SHAP Explainer ready for RoBERTa (explicit Text masker)")
             except Exception as e:
                 print(f"[XAI] SHAP text init failed — heuristic fallback will be used: {e}")
 
@@ -259,6 +267,7 @@ class XAIEngine:
                 # it needs for accurate token attributions.
                 shap_values = self.text_explainer([text])
                 tokens      = shap_values.data[0]
+                print(f"[XAI] SHAP raw token count: {len(tokens)} — sample: {list(tokens)[:6]}")
                 # FIX: was [:, 0] which explained "Non-Informative" (class 0)
                 # Now [:, 1] explains "Informative" (class 1) — semantically correct
                 # Positive weight = token pushes toward Informative/disaster
