@@ -50,7 +50,7 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
 
         {/* --- Logo Branding --- */}
-        <div className="flex items-center gap-3 group cursor-default shrink-0 mr-6">
+        <Link to="/" className="flex items-center gap-3 group shrink-0 mr-6">
           <div className="relative w-16 h-16 flex items-center justify-center">
             <img
               src={logo}
@@ -61,7 +61,7 @@ const Navbar = () => {
           <span className="text-white font-bold text-4xl tracking-tight hidden sm:block">
             Fact<span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-400">Fusion</span>
           </span>
-        </div>
+        </Link>
 
         {/* --- Central Navigation Links --- */}
         <div className="hidden md:flex items-center gap-4 lg:gap-8 text-sm font-medium text-blue-100/50">

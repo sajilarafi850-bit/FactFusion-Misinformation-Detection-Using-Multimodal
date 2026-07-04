@@ -16,7 +16,7 @@ const Footer = () => {
 
           {/* --- Column 1: Project Identity --- */}
           <div className="col-span-1 md:col-span-2">
-            <div className="flex items-center gap-3 group cursor-default">
+            <Link to="/" className="flex items-center gap-3 group w-fit">
               <div className="relative w-12 h-12 flex items-center justify-center transition-all duration-500">
                 <img
                   src={logo}
@@ -31,7 +31,7 @@ const Footer = () => {
                 </span>
                 <span className="text-[10px] text-blue-400/50 font-mono tracking-[0.2em] mt-1 uppercase">AI-Powered Disaster Verification System</span>
               </div>
-            </div>
+            </Link>
 
             <p className="mt-6 text-blue-100/40 max-w-sm leading-relaxed text-sm">
               A Final Year Project focused on <span className="text-blue-400 font-medium">Disaster Verification System</span>.
