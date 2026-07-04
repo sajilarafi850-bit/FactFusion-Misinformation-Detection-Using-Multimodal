@@ -4,11 +4,17 @@ import numpy as np
 
 
 class XAIEngine:
-    # How many top-weighted tokens to return for the SHAP/heuristic text
-    # attribution chart. Was hardcoded to 6 in two places — raised so the
-    # frontend has enough tokens to show a fuller picture of the model's
-    # reasoning, especially on longer disaster reports.
-    TOP_N_TOKENS = 15
+    # Token count scales with input length instead of a fixed number: short
+    # captions (tweets, one-liners) get a small, selective set of top words;
+    # longer disaster reports (100-200+ words) get more tokens so important
+    # information isn't cut off. Bounded between MIN and MAX so it's never
+    # too sparse (short text) or too cluttered (very long text).
+    MIN_TOKENS = 5
+    MAX_TOKENS = 15
+    TOKENS_PER_WORD = 0.1  # roughly 1 token shown per 10 input words
+
+    def _top_n_for(self, word_count):
+        return max(self.MIN_TOKENS, min(self.MAX_TOKENS, round(word_count * self.TOKENS_PER_WORD)))
 
     # SHAP text explainer gets noticeably slower (and RoBERTa truncates
     # anyway past its max length) on very long inputs. Capping the words fed
@@ -150,6 +156,8 @@ class XAIEngine:
         if self.image_explainer is not None:
             try:
                 import shap
+                # Full precision: no nsamples cap, so SHAP uses its own
+                # default sampling for the most accurate attribution.
                 shap_values = self.image_explainer.shap_values(input_tensor)
                 # shap_values is a list[ndarray], one per class, each (1, 3, 224, 224)
                 idx         = pred_class_idx if pred_class_idx is not None else 0
@@ -176,6 +184,36 @@ class XAIEngine:
 
         return None, "UNAVAILABLE", None
 
+    def _merge_subwords(self, tokens, weights, top_n, combine="sum"):
+        """
+        RoBERTa's BPE tokenizer splits many words into multiple subword pieces
+        (e.g. "disaster" → "dis" + "aster"). Ranking those pieces individually
+        by weight fragments a single important word across the top-N list,
+        while short, complete, low-signal words near the start of the text
+        (which stay as one token) rank higher by comparison — producing a
+        list that looks arbitrary/"messy" rather than genuinely important.
+        This merges continuation pieces (tokens without the leading "Ġ"
+        word-start marker) back onto the previous token and combines their
+        weights, so the final list is whole, readable words ranked by their
+        true combined importance.
+        """
+        merged = []
+        for t, w in zip(tokens, weights):
+            is_continuation = merged and not t.startswith("Ġ") and t not in ("Ġ",)
+            clean = t.replace("Ġ", "")
+            if not clean.strip():
+                continue
+            if is_continuation:
+                merged[-1]["token"] += clean
+                merged[-1]["weight"] += float(w)
+            else:
+                merged.append({"token": clean, "weight": float(w)})
+
+        for m in merged:
+            m["weight"] = round(m["weight"], 3)
+
+        return sorted(merged, key=lambda x: abs(x["weight"]), reverse=True)[:top_n]
+
     # =========================================================================
     # TEXT ATTRIBUTION — SHAP primary, original heuristic fallback
     # =========================================================================
@@ -198,9 +236,14 @@ class XAIEngine:
         if len(words) > self.MAX_ATTRIBUTION_WORDS:
             text = " ".join(words[:self.MAX_ATTRIBUTION_WORDS])
 
+        top_n = self._top_n_for(len(words))
+
         # PATH 1 — SHAP (only if text_explainer was initialised at init)
         if self.text_explainer is not None:
             try:
+                # Full precision: no max_evals cap, so SHAP scores as many
+                # perturbed text variants as its partition algorithm decides
+                # it needs for accurate token attributions.
                 shap_values = self.text_explainer([text])
                 tokens      = shap_values.data[0]
                 # FIX: was [:, 0] which explained "Non-Informative" (class 0)
@@ -208,19 +251,18 @@ class XAIEngine:
                 # Positive weight = token pushes toward Informative/disaster
                 # Negative weight = token pushes away from Informative
                 weights     = shap_values.values[0][:, 1]
-                result = [
-                    {"token": t.replace("Ġ", ""), "weight": round(float(w), 3)}
-                    for t, w in zip(tokens, weights)
-                    if t not in ["<s>", "</s>", "<pad>", "<unk>"]
-                ]
-                print("[XAI] Text attributions generated via SHAP")
-                return sorted(result, key=lambda x: abs(x["weight"]), reverse=True)[:self.TOP_N_TOKENS]
+                keep_mask   = [t not in ["<s>", "</s>", "<pad>", "<unk>"] for t in tokens]
+                clean_tokens  = [t for t, k in zip(tokens, keep_mask) if k]
+                clean_weights = [w for w, k in zip(weights, keep_mask) if k]
+                result = self._merge_subwords(clean_tokens, clean_weights, top_n)
+                print(f"[XAI] Text attributions generated via SHAP (top_{top_n})")
+                return result
             except Exception as e:
                 print(f"[XAI] Text SHAP failed: {e} — falling back to heuristic")
 
         # PATH 2 — your original heuristic (completely unchanged)
         if self.text_model is None:
-            return [{"token": word, "weight": 0.5} for word in text.split()[:self.TOP_N_TOKENS]]
+            return [{"token": word, "weight": 0.5} for word in text.split()[:top_n]]
 
         inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=128)
 
@@ -241,16 +283,15 @@ class XAIEngine:
 
         grad_mag = embeds.grad[0].norm(dim=-1).detach().cpu().numpy()
 
-        attributions = []
-        for idx, token in enumerate(tokens):
-            if token in ['<s>', '</s>', '<pad>', '<unk>']:
-                continue
-            attributions.append({"token": token.replace('Ġ', ''), "weight": round(float(grad_mag[idx]), 4)})
+        keep_mask     = [token not in ['<s>', '</s>', '<pad>', '<unk>'] for token in tokens]
+        clean_tokens  = [t for t, k in zip(tokens, keep_mask) if k]
+        clean_weights = [grad_mag[i] for i, k in enumerate(keep_mask) if k]
 
-        # Normalise to 0-1 so frontend gauge works correctly
-        if attributions:
-            max_w = max(a["weight"] for a in attributions) or 1.0
-            for a in attributions:
-                a["weight"] = round(a["weight"] / max_w, 3)
+        # Normalise raw gradient magnitudes to 0-1 BEFORE merging, so the
+        # frontend gauge scale stays consistent regardless of how many
+        # subword pieces end up combined into a given word.
+        if len(clean_weights):
+            max_w = max(clean_weights) or 1.0
+            clean_weights = [w / max_w for w in clean_weights]
 
-        return sorted(attributions, key=lambda x: x["weight"], reverse=True)[:self.TOP_N_TOKENS]
+        return self._merge_subwords(clean_tokens, clean_weights, top_n)
