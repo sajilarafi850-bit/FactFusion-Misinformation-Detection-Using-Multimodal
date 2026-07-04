@@ -1,5 +1,5 @@
 """
-Probe script for text_model_v2 — prints raw softmax probabilities
+Probe script for text_final_model — prints raw softmax probabilities
 (not just the final label) for a spread of test inputs, so you can see
 whether the model is keying on keyword presence vs. actual informativeness.
 
@@ -7,7 +7,7 @@ Usage:
     python probe_text_model.py
 
 Assumes this script sits in the same directory as model_service.py,
-or adjust MODEL_DIR below to point at your models/text_model_v2 folder.
+or adjust MODEL_DIR below to point at your models/text_final_model folder.
 """
 
 import os
@@ -15,7 +15,7 @@ import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # --- adjust this path if needed ---
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "text_model_v2")
+MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "text_final_model")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
