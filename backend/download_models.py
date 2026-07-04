@@ -26,11 +26,23 @@ def download_weights():
                 repo_id=REPO_ID,
                 filename="Text_Final_Model.zip",   # ← ye HF repo ke actual filename se match hona chahiye
                 local_dir=TARGET_DIR,
-                repo_type="dataset"
+                repo_type="dataset",
+                force_download=True
             )
             print(f"[+] Extracting Text_Final_Model.zip into {text_model_dir}...")
             os.makedirs(text_model_dir, exist_ok=True)
+
+            # --- Verify zip integrity before extracting. Xet-backed downloads
+            # can occasionally leave a truncated/corrupt local copy behind if
+            # a prior download was interrupted; testzip() catches that early
+            # instead of silently extracting a broken tokenizer.json etc. ---
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                bad_file = zip_ref.testzip()
+                if bad_file is not None:
+                    raise RuntimeError(
+                        f"Corrupt file detected inside zip: {bad_file}. "
+                        f"Deleting and re-downloading is recommended."
+                    )
                 zip_ref.extractall(text_model_dir)
             print("[+] Cleanly extracted Text_Final_Model.zip!")
 
