@@ -199,7 +199,7 @@ class XAIEngine:
 
         return None, "UNAVAILABLE", None
 
-    def _merge_subwords(self, tokens, weights, top_n, combine="sum"):
+    def _merge_subwords(self, tokens, weights, top_n, combine="sum", keep_order=False):
         """
         RoBERTa's BPE tokenizer splits many words into multiple subword pieces
         (e.g. "disaster" → "dis" + "aster"). Ranking those pieces individually
@@ -223,6 +223,10 @@ class XAIEngine:
              leading markers caused every one of these tokens to register as
              a "continuation" of the first, merging the entire sentence into
              a single giant token — this checks all three.
+
+        keep_order=True returns every merged word in original reading order
+        (no top-N truncation) so the frontend can render the full sentence,
+        scrollable, instead of just the most "important" few words.
         """
         merged = []
         prev_ends_word = True  # first token always starts a new word
@@ -241,6 +245,9 @@ class XAIEngine:
 
         for m in merged:
             m["weight"] = round(m["weight"], 3)
+
+        if keep_order:
+            return merged
 
         return sorted(merged, key=lambda x: abs(x["weight"]), reverse=True)[:top_n]
 
@@ -290,8 +297,8 @@ class XAIEngine:
                 keep_mask   = [t not in ["<s>", "</s>", "<pad>", "<unk>"] for t in tokens]
                 clean_tokens  = [t for t, k in zip(tokens, keep_mask) if k]
                 clean_weights = [w for w, k in zip(weights, keep_mask) if k]
-                result = self._merge_subwords(clean_tokens, clean_weights, top_n)
-                print(f"[XAI] Text attributions generated via SHAP (top_{top_n})")
+                result = self._merge_subwords(clean_tokens, clean_weights, top_n, keep_order=True)
+                print(f"[XAI] Text attributions generated via SHAP ({len(result)} tokens, full sentence)")
                 return result
             except Exception as e:
                 print(f"[XAI] Text SHAP failed: {e} — falling back to heuristic")
@@ -330,4 +337,4 @@ class XAIEngine:
             max_w = max(clean_weights) or 1.0
             clean_weights = [w / max_w for w in clean_weights]
 
-        return self._merge_subwords(clean_tokens, clean_weights, top_n)
+        return self._merge_subwords(clean_tokens, clean_weights, top_n, keep_order=True)

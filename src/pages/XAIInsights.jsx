@@ -415,7 +415,7 @@ const XAIInsights = () => {
                                     {hasNeg && <span className="flex items-center gap-1 text-blue-400"><span className="w-2 h-2 rounded-sm bg-blue-500 inline-block" />Against</span>}
                                   </div>
                                 </div>
-                                <div className="space-y-2">
+                                <div className="space-y-2 max-h-72 overflow-y-auto pr-2">
                                   {xai.text_attributions.map((attr, idx) => {
                                     const pct = (Math.abs(attr.weight) / maxW) * 100;
                                     const isPos = attr.weight >= 0;

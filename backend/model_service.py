@@ -66,10 +66,32 @@ class ModelLoader:
 
     def _has_disaster_signal(self, text):
         """Cheap domain gate: does this text contain any disaster-domain keyword
-        or soft/indirect disaster-reaction phrase?"""
+        or soft/indirect disaster-reaction phrase?
+
+        IMPORTANT: keyword matching must be WHOLE-WORD, not substring. A naive
+        substring check (e.g. "war" in "afterward") produces false positives
+        on completely unrelated words like "afterward", "warm", "reward",
+        "award", "warning label", etc. — silently defeating the OOD gate for
+        any text that happens to contain those letter sequences.
+        """
         clean = re.sub(r'[^a-z\s]', ' ', text.lower())
-        words = set(clean.split())
-        has_keyword = any(kw in clean for kw in self.disaster_keywords) or bool(words & set(self.disaster_keywords))
+        words = clean.split()
+        word_set = set(words)
+
+        # Whole-word match only for single-word keywords in disaster_keywords.
+        # Multi-word keywords (like "death toll") are checked as substrings of
+        # the cleaned text, since they can't be matched via the word set.
+        has_keyword = False
+        for kw in self.disaster_keywords:
+            if " " in kw:
+                if kw in clean:
+                    has_keyword = True
+                    break
+            else:
+                if kw in word_set:
+                    has_keyword = True
+                    break
+
         has_soft_phrase = any(phrase in clean for phrase in self.soft_disaster_phrases)
         return has_keyword or has_soft_phrase
 
@@ -102,8 +124,10 @@ class ModelLoader:
                 probs   = torch.softmax(outputs.logits, dim=1)[0]
 
             # Model is a strict binary classifier: 0=Non-Informative, 1=Informative.
-            # (Confirmed by the saved config.json id2label/label2id mapping — there
-            # is no third class. OOD is handled entirely by the domain gate above.)
+            # (Confirmed by class weights in training_summary.json — class 0 has
+            # higher weight (minority/Non-Informative), class 1 has lower weight
+            # (majority/Informative), matching the training dataset's binary_label
+            # mapping of informative=1, not_informative=0.)
             pred_idx         = probs.argmax().item()
             final_confidence = probs[pred_idx].item()
 
