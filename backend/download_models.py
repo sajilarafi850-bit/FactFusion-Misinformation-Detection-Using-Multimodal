@@ -13,29 +13,29 @@ def download_weights():
     print(f"[*] Target model directory: {TARGET_DIR}")
     os.makedirs(TARGET_DIR, exist_ok=True)
 
-    # --- text_final_model: real zip archive (multiple files: config, tokenizer, weights) ---
-    text_model_dir = os.path.join(TARGET_DIR, "text_final_model")
+    # --- Text_Final_Model: real zip archive (multiple files: config, tokenizer, weights) ---
+    text_model_dir = os.path.join(TARGET_DIR, "Text_Final_Model")
     sentinel = os.path.join(text_model_dir, "config.json")
     if os.path.exists(sentinel):
-        print("[OK] text_final_model already extracted — skipping download.")
+        print("[OK] Text_Final_Model already extracted — skipping download.")
     else:
-        print("[+] Pulling text_final_model.zip from Hub...")
+        print("[+] Pulling Text_Final_Model.zip from Hub...")
         try:
             zip_path = hf_hub_download(
                 repo_id=REPO_ID,
-                filename="text_final_model.zip",
+                filename="Text_Final_Model.zip",   # ← ye HF repo ke actual filename se match hona chahiye
                 local_dir=TARGET_DIR,
                 repo_type="dataset"
             )
-            print(f"[+] Extracting text_final_model.zip into {text_model_dir}...")
+            print(f"[+] Extracting Text_Final_Model.zip into {text_model_dir}...")
             os.makedirs(text_model_dir, exist_ok=True)
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(text_model_dir)
-            print("[+] Cleanly extracted text_final_model.zip!")
+            print("[+] Cleanly extracted Text_Final_Model.zip!")
             if os.path.exists(zip_path):
                 os.remove(zip_path)
         except Exception as e:
-            print(f"[ERROR] Error processing text_final_model.zip: {e}")
+            print(f"[ERROR] Error processing Text_Final_Model.zip: {e}")
             raise e
 
     # --- semantic + forensic: raw .pt files, no zip wrapping ---
