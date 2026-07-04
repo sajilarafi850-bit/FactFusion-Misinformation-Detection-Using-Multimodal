@@ -1,4 +1,5 @@
 import os
+import shutil
 import zipfile
 from huggingface_hub import hf_hub_download
 
@@ -32,6 +33,21 @@ def download_weights():
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(text_model_dir)
             print("[+] Cleanly extracted Text_Final_Model.zip!")
+
+            # --- Flatten nested folder if the zip wrapped its contents inside
+            # a subfolder (e.g. final_model/config.json instead of
+            # config.json directly). Without this, sentinel checks like
+            # config.json existing at the top level will fail even though
+            # the model files are present one level deeper. ---
+            contents = os.listdir(text_model_dir)
+            if len(contents) == 1 and os.path.isdir(os.path.join(text_model_dir, contents[0])):
+                nested_dir = os.path.join(text_model_dir, contents[0])
+                print(f"[+] Detected nested folder '{contents[0]}' — flattening...")
+                for item in os.listdir(nested_dir):
+                    shutil.move(os.path.join(nested_dir, item), text_model_dir)
+                os.rmdir(nested_dir)
+                print("[+] Flattened nested folder successfully!")
+
             if os.path.exists(zip_path):
                 os.remove(zip_path)
         except Exception as e:
