@@ -179,7 +179,10 @@ npm run dev
 
 - Backend is deployed as a Docker Space on Hugging Face (migrated from Railway due to RAM limits — the full model stack exceeds Railway's ~512MB cap on free tiers).
 - Model weights are hosted separately in a Hugging Face dataset repo and downloaded at container startup via `hf_hub_download`, avoiding large files in the Docker image itself.
-- To push backend updates to the Space:
+- The Hugging Face Space is auto-synced from this GitHub repository using an `HF_TOKEN` secret — pushing to `main` automatically triggers an update and redeploy of the backend Space. No manual `hf upload` or second git remote needed.
   ```bash
-  hf upload Inas-00/FactFusion-backend backend/<filename> <filename> --repo-type=space
+  git add .
+  git commit -m "your message"
+  git push origin main
   ```
+- Frontend (Vercel) auto-deploys on push as well, via Vercel's GitHub integration.
