@@ -6,9 +6,9 @@ colorTo: indigo
 sdk: docker
 pinned: false
 ---
-# 🛡️ FactFusion: Multimodal AI Misinformation Detection
+# 🛡️ FactFusion: Multimodal AI Misinformation & Disaster Information Detection
 
-FactFusion is a premium, state-of-the-art web application designed for multimodal misinformation detection. Utilizing advanced Explainable AI (XAI) insights and real-time crisis classification, FactFusion helps users analyze and verify the authenticity of text and image content.
+FactFusion is a multimodal misinformation detection system built for identifying fake news and unreliable disaster-related content across **text and images**. It combines four specialized deep learning models with Explainable AI (XAI) to not only classify content but show *why* a verdict was reached.
 
 ---
 
@@ -16,7 +16,25 @@ FactFusion is a premium, state-of-the-art web application designed for multimoda
 
 - **Frontend App (Vercel):** [fact-fusion.vercel.app](https://fact-fusion.vercel.app)
 - **Backend API (Hugging Face Spaces):** [inas-00-factfusion-backend.hf.space](https://inas-00-factfusion-backend.hf.space)
+- **Model Weights:** [Inas-00/factfusion-weights](https://huggingface.co/datasets/Inas-00/factfusion-weights) (Hugging Face dataset repo)
 - **Database:** MongoDB Atlas Cluster
+
+---
+
+## 🧠 Model Pipeline
+
+FactFusion fuses four models to produce **8 possible verdict labels** combining text informativeness, image authenticity, and cross-modal consistency:
+
+| Model | Task | Base Architecture |
+| :--- | :--- | :--- |
+| **Text Classifier** | Informative / Non-Informative / Out-of-Distribution (OOD) | RoBERTa |
+| **Semantic Image Classifier** | Real Crisis / Normal Non-Crisis | EfficientNet-B3 |
+| **Forensic Image Classifier** | Authentic / Tampered (image manipulation detection) | EfficientNet-B3 (`forensic_v3_model_BEST.pt`) |
+| **Cross-Modal Fusion** | Text–image consistency / mismatch detection | CLIP |
+
+The forensic model was retrained (v3) on synthetically tampered **disaster-domain** images after v2 was found to underperform on real-world disaster photos, having originally been trained only on the generic CASIA2 tampering dataset.
+
+Verdict logic (in `multimodal_service.py`) accounts for edge cases such as non-informative or OOD text paired with mismatched images, and gracefully degrades when the forensic model is unavailable (flagged as `forensic_unavailable` rather than silently failing).
 
 ---
 
@@ -24,19 +42,21 @@ FactFusion is a premium, state-of-the-art web application designed for multimoda
 
 ### Frontend
 - **Framework:** React + Vite
-- **Styling:** Vanilla CSS + TailwindCSS (for responsive UI components)
-- **Charts:** Chart.js / Recharts (for XAI visualization)
+- **Styling:** Vanilla CSS + TailwindCSS (dark theme, custom scrollbar styling)
+- **Charts:** Chart.js / Recharts (XAI visualizations)
 
 ### Backend
-- **Framework:** Python + Flask
-- **Machine Learning / NLP:** Transformers (Hugging Face), PyTorch, Multimodal models
-- **Explainability (XAI):** Integrated feature attribution and attention visualization services
+- **Framework:** Python + Flask (Dockerized)
+- **Machine Learning:** PyTorch, Transformers (Hugging Face), RoBERTa, EfficientNet-B3, CLIP
+- **Explainability (XAI):**
+  - **SHAP** — token-level text attributions (top 15 tokens)
+  - **Grad-CAM** — visual heatmaps for image classifiers, with CLIP-based fallback
 - **Deployment Platform:** Hugging Face Spaces (Docker SDK)
+- **Model Distribution:** Hugging Face Hub (`hf_hub_download`) from a dedicated weights dataset repo
 
 ### Database & Authentication
 - **Database:** MongoDB Atlas (Cloud Database)
-- **Auth:** Token-based session / user authorization
-
+- **Auth:** Token-based sessions; admin-controlled password reset (no self-service SMTP flow)
 
 ---
 
@@ -47,7 +67,15 @@ graph TD
     User([User Client]) <--> Frontend[Vercel Frontend: React]
     Frontend <--> Backend[Hugging Face Spaces: Flask API]
     Backend <--> DB[(MongoDB Atlas)]
-    Backend <--> ML[ML Models / XAI Engine]
+    Backend --> Text[RoBERTa: Text Classifier]
+    Backend --> Semantic[EfficientNet-B3: Semantic Image Classifier]
+    Backend --> Forensic[EfficientNet-B3: Forensic Classifier v3]
+    Backend --> Fusion[CLIP: Cross-Modal Fusion]
+    Text --> Verdict{Verdict Engine}
+    Semantic --> Verdict
+    Forensic --> Verdict
+    Fusion --> Verdict
+    Verdict --> XAI[XAI Service: SHAP + Grad-CAM]
 ```
 
 ---
@@ -56,24 +84,31 @@ graph TD
 
 ### Backend Directory (`/backend`)
 * **Core Services:**
-  * `server.py`: The entry point for the Flask REST API.
+  * `server.py`: Entry point for the Flask REST API.
   * `model_service.py`: Standard classification model logic.
-  * `multimodal_service.py`: Multimodal fusion logic for text + image.
-  * `xai_service.py`: Explainable AI algorithms and token attribution analysis.
-  * `database.py`: Configuration and handlers for MongoDB Atlas connections.
+  * `multimodal_service.py`: Multimodal fusion and verdict logic (text + image + forensic + CLIP).
+  * `xai_service.py`: SHAP token attribution and Grad-CAM heatmap generation.
+  * `database.py`: MongoDB Atlas connection handlers.
 * **Setup & Helper Scripts:**
-  * `download_models.py`: Utility script to fetch and download model weights.
+  * `download_models.py`: Fetches model weights from the Hugging Face weights repo at startup.
+
+### Frontend Directory (`/src`)
+* `verdict.js`: Shared utility for interpreting and displaying the 8 verdict labels consistently across the UI.
+* `AnalysisHistory.jsx`: Paginated, real-time-polling history view.
+* `XAIInsights.jsx`: Renders SHAP bar charts and Grad-CAM heatmaps.
+* `Login.jsx`: Auth flow with email domain typo suggestions.
 
 ---
 
 ## ✨ Features
 
-- **Multimodal AI Analysis:** Simultaneously analyze and detect anomalies in text and image uploads.
-- **Misinformation Detection:** State-of-the-art classifier providing confidence scores for text veracity.
-- **Explainable AI (XAI) Insights:** Clear, interpretable visualization of model feature attributions.
-- **User Authentication:** Secure signup/login flow to persist history.
-- **Analysis History:** Dynamic user dashboard tracking previous classification queries.
-- **Real-Time Classification:** Optimized inference pipeline for real-time responsiveness.
+- **Multimodal AI Analysis:** Simultaneously analyze text and image uploads for misinformation and manipulation.
+- **Disaster-Aware Classification:** Purpose-built for distinguishing real crisis content from unrelated or fabricated imagery.
+- **Forensic Image Analysis:** Detects tampered/manipulated images using a domain-adapted forensic classifier.
+- **Cross-Modal Consistency Checks:** Flags mismatches between text claims and accompanying images via CLIP.
+- **Explainable AI (XAI) Insights:** SHAP token attributions and Grad-CAM heatmaps for full transparency into every verdict.
+- **User Authentication:** Secure signup/login with admin-controlled password recovery.
+- **Analysis History:** Paginated, real-time-updating dashboard of past queries.
 
 ---
 
@@ -110,6 +145,8 @@ pip install -r requirements.txt
 python server.py
 ```
 
+> **Note:** On first run, `download_models.py` will pull model weights from the Hugging Face weights repo. Ensure `numpy==1.26.4` is installed (required for SHAP compatibility — NumPy 2.x will break XAI features).
+
 ### 3. Frontend Setup
 ```bash
 # From the root directory
@@ -136,3 +173,13 @@ npm run dev
 | :--- | :--- |
 | `VITE_API_URL` | Base URL of your backend on Hugging Face Spaces |
 
+---
+
+## 📦 Deployment Notes
+
+- Backend is deployed as a Docker Space on Hugging Face (migrated from Railway due to RAM limits — the full model stack exceeds Railway's ~512MB cap on free tiers).
+- Model weights are hosted separately in a Hugging Face dataset repo and downloaded at container startup via `hf_hub_download`, avoiding large files in the Docker image itself.
+- To push backend updates to the Space:
+  ```bash
+  hf upload Inas-00/FactFusion-backend backend/<filename> <filename> --repo-type=space
+  ```
