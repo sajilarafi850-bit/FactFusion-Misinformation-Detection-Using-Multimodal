@@ -5,7 +5,7 @@ import {
   AreaChart, Area, Tooltip, ResponsiveContainer
 } from 'recharts';
 import {
-  Activity, ShieldCheck, Zap, AlertTriangle,
+  ShieldCheck, Zap, AlertTriangle,
   TrendingUp, Cpu, Database, FileText, Share2
 } from 'lucide-react';
 
@@ -153,7 +153,7 @@ const Dashboard = () => {
   const originData = [
     { name: 'Unverified Claims', value: stats.textThreats, icon: FileText, color: '#f97316' },
     { name: 'Out of Context', value: stats.filteredThreats, icon: AlertTriangle, color: '#9ca3af' },
-    { name: 'Fusion Mismatch', value: stats.mismatchThreats, icon: Share2, color: '#a855f7' },
+    { name: 'Fusion Mismatch', value: stats.mismatchThreats, icon: Share2, color: '#a855f7', description: 'Text claims not contextually or visually supported by paired imagery.' },
   ];
 
   if (loading) {
@@ -247,9 +247,9 @@ const Dashboard = () => {
             </h3>
             <div className="space-y-6 flex-1 justify-center flex flex-col">
               {originData.map((origin, idx) => (
-                <div key={idx} className="space-y-2">
+                <div key={idx} className="space-y-2" title={origin.description || undefined}>
                   <div className="flex justify-between text-sm font-bold">
-                    <span className="flex items-center gap-2 text-white/60">
+                    <span className="flex items-center gap-2 text-white/60 cursor-help">
                       <origin.icon size={16} /> {origin.name}
                     </span>
                     <span>{origin.value}</span>
@@ -357,24 +357,6 @@ const Dashboard = () => {
             )}
           </motion.div>
         )}
-
-        {/* --- System Intelligence Info Banner --- */}
-        <motion.div
-          whileHover={{ scale: 1.01 }}
-          className="bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-transparent border border-blue-500/20 rounded-[2.5rem] p-8 flex flex-col md:flex-row items-center justify-between gap-6"
-        >
-          <div className="flex items-center gap-6">
-            <div className="p-5 bg-blue-500/20 rounded-3xl text-blue-400 shadow-xl shadow-blue-500/10">
-              <Activity size={32} />
-            </div>
-            <div>
-              <h4 className="text-xl font-black mb-1 italic tracking-tight">Fusion Intelligence Report</h4>
-              <p className="text-blue-100/40 text-sm max-w-xl font-medium leading-relaxed">
-                System has detected {stats.mismatchThreats} Semantic Mismatches across all scans. This indicates certain text claims are not contextually or visually supported by paired imagery.
-              </p>
-            </div>
-          </div>
-        </motion.div>
 
       </div>
     </div>
