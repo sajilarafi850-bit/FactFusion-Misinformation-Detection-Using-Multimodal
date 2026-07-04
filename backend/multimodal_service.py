@@ -322,7 +322,12 @@ class MultimodalService:
                 reasoning = "Please provide image or text input."
             elif has_image and not has_text:
                 if img_is_disaster and image_analysis.get("forensic_label") == "Tampered":
-                    multimodal_label = "MISINFORMATION — Manipulated Image"
+                    # Image-only path: this is a genuine crisis-scene image whose
+                    # forensic check found tampering. Keep the "Real Crisis" framing
+                    # (matches combined_image_label) instead of the multimodal
+                    # MISINFORMATION wording, which implies a false claim that only
+                    # makes sense once there's accompanying text to fact-check.
+                    multimodal_label = "Real Crisis / Disaster — Manipulated Image"
                     reasoning = (
                         "Forensic analysis detected digital alterations in this crisis "
                         "image. (No accompanying text was provided.)"

@@ -22,8 +22,8 @@ export const getVerdictCategory = (verdict) => {
         v === 'NON-INFORMATIVE'
     ) return 'Non-Informative';
 
-    // Suspicious / Not Relevant → treat as Non-Informative for stats
-    if (v.includes('SUSPICIOUS') || v.includes('NOT RELEVANT')) return 'Non-Informative';
+    // Suspicious → treat as Non-Informative for stats
+    if (v.includes('SUSPICIOUS')) return 'Non-Informative';
 
     // Text-only informative
     if (v === 'INFORMATIVE') return 'Informative';
@@ -31,7 +31,7 @@ export const getVerdictCategory = (verdict) => {
     // Image-only real crisis (no text)
     if (v.includes('REAL CRISIS')) return 'Informative';
 
-    // OOD, uncertain, no data
+    // NOT RELEVANT, OOD, uncertain, no data → domain-irrelevant / inconclusive
     return 'OOD';
 };
 
@@ -48,10 +48,10 @@ export const classifyVerdict = (verdictOrRecord) => {
         isHighRisk: v.includes('HIGH RISK') || v.includes('MISINFORMATION'),
 
         // Suspicious: mismatch, unrelated caption, unverified rumor
-        isSuspicious: v.includes('SUSPICIOUS') || v.includes('NOT RELEVANT'),
+        isSuspicious: v.includes('SUSPICIOUS'),
 
-        // OOD / no data
-        isOOD: v === 'OOD' || v === 'NO DATA' || v.includes('UNCERTAIN') || v === 'ML DISABLED',
+        // OOD / no data / not relevant (domain-irrelevant, not a threat)
+        isOOD: v === 'OOD' || v === 'NO DATA' || v.includes('UNCERTAIN') || v === 'ML DISABLED' || v.includes('NOT RELEVANT'),
     };
 };
 
