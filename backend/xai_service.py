@@ -265,7 +265,12 @@ class XAIEngine:
                 # Full precision: no max_evals cap, so SHAP scores as many
                 # perturbed text variants as its partition algorithm decides
                 # it needs for accurate token attributions.
-                shap_values = self.text_explainer([text])
+                # fixed_context=1 forces PartitionExplainer to evaluate down to
+                # leaf-level (per-token) Shapley values instead of stopping at
+                # a coarse top-level split — without it, short/simple inputs
+                # can converge in just 1-2 partitions, collapsing the entire
+                # sentence into a single "token".
+                shap_values = self.text_explainer([text], max_evals=500, fixed_context=1)
                 tokens      = shap_values.data[0]
                 print(f"[XAI] SHAP raw token count: {len(tokens)} — sample: {list(tokens)[:6]}")
                 # FIX: was [:, 0] which explained "Non-Informative" (class 0)
