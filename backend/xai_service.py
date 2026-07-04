@@ -211,20 +211,29 @@ class XAIEngine:
         combines their weights, so the final list is whole, readable words
         ranked by their true combined importance.
 
-        Word-start detection handles BOTH tokenization conventions seen in
-        practice: the raw HF tokenizer marks a new word with a "Ġ" prefix,
-        while SHAP's own text masker instead prefixes new words with a plain
-        leading space (" "). Checking only "Ġ" caused every SHAP token to
-        register as a "continuation" of the first one, merging the entire
-        sentence into a single giant token — this checks both.
+        Word-start detection handles THREE tokenization conventions seen in
+        practice:
+          1. Raw HF tokenizer marks a new word with a "Ġ" prefix.
+          2. SHAP's text masker (older/other configs) prefixes new words with
+             a plain leading space (" ").
+          3. SHAP's Text masker with fixed_context=1 (current setup) instead
+             gives each token a TRAILING space (e.g. "My ", "dog ") — the
+             token itself is already a complete word, and the trailing space
+             signals that the *next* token starts fresh. Checking only
+             leading markers caused every one of these tokens to register as
+             a "continuation" of the first, merging the entire sentence into
+             a single giant token — this checks all three.
         """
         merged = []
+        prev_ends_word = True  # first token always starts a new word
         for t, w in zip(tokens, weights):
-            is_word_start = (not merged) or t.startswith("Ġ") or t.startswith(" ")
-            clean = t.lstrip("Ġ").lstrip(" ")
-            if not clean.strip():
+            is_word_start = prev_ends_word or t.startswith("Ġ") or t.startswith(" ")
+            clean = t.strip().lstrip("Ġ").strip()
+            prev_ends_word = t.endswith(" ")
+            if not clean:
+                prev_ends_word = True  # whitespace-only token still marks a boundary
                 continue
-            if is_word_start:
+            if is_word_start or not merged:
                 merged.append({"token": clean, "weight": float(w)})
             else:
                 merged[-1]["token"] += clean
