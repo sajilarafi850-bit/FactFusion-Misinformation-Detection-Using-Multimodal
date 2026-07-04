@@ -48,6 +48,8 @@ const Footer = () => {
             <ul className="space-y-4 text-blue-100/40 text-sm font-medium">
               <li><Link to="/detection" className="hover:text-blue-400 transition-all duration-300">Disaster Detection</Link></li>
               <li><Link to="/xai" className="hover:text-purple-400 transition-all duration-300">Explainability </Link></li>
+              <li><Link to="/dashboard" className="hover:text-blue-400 transition-all duration-300">Dashboard</Link></li>
+              <li><Link to="/history" className="hover:text-blue-400 transition-all duration-300">Analysis History</Link></li>
               <li><Link to="/about" className="hover:text-blue-400 transition-all duration-300">About</Link></li>
             </ul>
           </div>
@@ -70,6 +72,10 @@ const Footer = () => {
               <div className="flex items-center gap-3 text-[11px] text-blue-100/40 font-mono">
                 <Server size={14} className="text-blue-500" />
                 <span>Node.js / MongoDB</span>
+              </div>
+              <div className="flex items-center gap-3 text-[11px] text-blue-100/40 font-mono">
+                <Server size={14} className="text-blue-500" />
+                <span>Hosted on Hugging Face Spaces</span>
               </div>
 
               <div className="pt-2">
