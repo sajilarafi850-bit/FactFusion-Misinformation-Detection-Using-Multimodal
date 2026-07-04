@@ -19,33 +19,68 @@ class ModelLoader:
         # by a model-trained class. If the text shows no disaster-domain signal
         # at all, we short-circuit to OOD; otherwise we let the model classify
         # Informative vs Non-Informative as it was trained to do.
+        #
+        # Exact port of CRISIS_KEYWORDS from text_analysis.ipynb (CELL 5) —
+        # keep this list and the substring-matching behavior in
+        # _has_disaster_signal identical to the notebook the model was
+        # validated against.
         self.disaster_keywords = [
-            # events / hazards
-            "earthquake", "flood", "flooding", "tsunami", "hurricane", "typhoon",
-            "cyclone", "tornado", "landslide", "mudslide", "wildfire", "fire",
-            "explosion", "blast", "eruption", "volcano", "drought", "famine",
-            "storm", "avalanche", "collapse", "outbreak", "epidemic", "pandemic",
-            "war", "attack", "bombing", "shooting", "crash", "derailment",
-            # impact / response terms
-            "disaster", "crisis", "emergency", "evacuate", "evacuation", "rescue",
-            "relief", "casualties", "casualty", "fatalities", "fatality", "injured",
-            "injuries", "victim", "victims", "death toll", "displaced", "shelter",
-            "damage", "destroyed", "destruction", "collapsed", "rubble", "debris",
-            "aftershock", "warning", "alert", "siren", "trapped", "missing",
-            "humanitarian", "aid", "responders", "firefighters", "paramedics",
-            "ambulance", "hospital", "wounded", "survivors", "looting", "curfew",
+            # Earthquake
+            'earthquake', 'quake', 'tremor', 'aftershock', 'shake', 'shaking', 'shook',
+            'rumble', 'rumbling', 'vibration', 'vibrate', 'tremble', 'trembling',
+            'seismic', 'epicenter', 'richter', 'magnitude',
+
+            # Flood
+            'flood', 'flooding', 'flooded', 'flash flood', 'water level', 'rising water',
+            'overflow', 'inundation', 'submerged', 'swamped', 'rain', 'heavy rain',
+            'monsoon', 'downpour', 'torrential rain', 'storm surge',
+
+            # Storm
+            'storm', 'cyclone', 'typhoon', 'hurricane', 'tornado', 'twister',
+            'windstorm', 'thunderstorm', 'blizzard', 'snowstorm', 'hailstorm',
+
+            # Land movement
+            'landslide', 'avalanche', 'mudslide', 'rockslide', 'sinkhole',
+            'collapse', 'cave in',
+
+            # Fire
+            'fire', 'wildfire', 'forest fire', 'bushfire', 'blaze', 'inferno',
+            'burning', 'burn', 'smoke', 'flame', 'arson',
+            'explosion', 'blast', 'detonation',
+
+            # Rescue & Emergency
+            'rescue', 'rescued', 'rescuing', 'evacuate', 'evacuation', 'evacuated',
+            'shelter', 'emergency', 'urgent', 'critical', 'disaster', 'catastrophe',
+            'calamity', 'tragedy', 'crisis',
+            'ambulance', 'hospital', 'medical',
+            'relief', 'aid', 'assistance', 'help',
+
+            # Casualties
+            'casualty', 'casualties', 'dead', 'death', 'died', 'deceased',
+            'fatal', 'fatalities', 'injured', 'injury', 'wounded', 'victim',
+            'survivor', 'survived', 'trapped', 'missing', 'lost',
+            'bodies', 'body', 'buried', 'crushed',
+
+            # Infrastructure
+            'collapsed', 'collapse', 'destroyed', 'damage', 'shattered',
+            'rubble', 'debris', 'ruins', 'wreckage', 'demolished',
+            'building collapse', 'bridge collapse',
+
+            # Security
+            'terrorist', 'terrorism', 'attack', 'shooting', 'hostage',
+            'bomb', 'bombing', 'explosive', 'gunfire',
+            'police', 'security', 'lockdown', 'curfew',
+
+            # Government & Official
+            'government', 'ndma', 'army', 'military', 'relief camp',
+            'warning', 'alert', 'advisory', 'notification',
+
+            # General
+            'danger', 'threat', 'risk', 'hazard', 'emergency services',
+            'death toll', 'injured count', 'missing persons',
         ]
-        # Soft/indirect disaster-reaction phrases — vague emotional language people
-        # actually post about real disasters, without using clinical keywords above.
-        # Multi-word phrases only, to avoid false-positives from unrelated contexts
-        # (bare words like "scary" or "terrible" are deliberately excluded — they're
-        # too common in non-disaster contexts like movies, sports, breakups, etc.)
-        self.soft_disaster_phrases = [
-            "pray for everyone", "thoughts and prayers", "sending love and strength",
-            "sending love", "sending strength", "stay safe everyone", "please stay safe",
-            "everyone affected", "our thoughts are with", "our hearts go out",
-            "heartbroken", "condolences",
-        ]
+        # Kept for backward-compat fallback use in multimodal_service.py's
+        # keyword-heuristic XAI path (not part of the notebook's OOD gate).
         self.uncertain_words = [
             "maybe", "rumor", "rumour", "unconfirmed", "allegedly", "claims",
             "reportedly", "unverified",
@@ -65,35 +100,14 @@ class ModelLoader:
             self.model = None
 
     def _has_disaster_signal(self, text):
-        """Cheap domain gate: does this text contain any disaster-domain keyword
-        or soft/indirect disaster-reaction phrase?
-
-        IMPORTANT: keyword matching must be WHOLE-WORD, not substring. A naive
-        substring check (e.g. "war" in "afterward") produces false positives
-        on completely unrelated words like "afterward", "warm", "reward",
-        "award", "warning label", etc. — silently defeating the OOD gate for
-        any text that happens to contain those letter sequences.
+        """Domain gate — exact port of text_analysis.ipynb's test_my_text()
+        keyword check: `matched_keywords = [w for w in CRISIS_KEYWORDS if w in
+        text_lower]`. This is a plain substring match (NOT whole-word), same
+        as the notebook the model was validated against.
         """
-        clean = re.sub(r'[^a-z\s]', ' ', text.lower())
-        words = clean.split()
-        word_set = set(words)
-
-        # Whole-word match only for single-word keywords in disaster_keywords.
-        # Multi-word keywords (like "death toll") are checked as substrings of
-        # the cleaned text, since they can't be matched via the word set.
-        has_keyword = False
-        for kw in self.disaster_keywords:
-            if " " in kw:
-                if kw in clean:
-                    has_keyword = True
-                    break
-            else:
-                if kw in word_set:
-                    has_keyword = True
-                    break
-
-        has_soft_phrase = any(phrase in clean for phrase in self.soft_disaster_phrases)
-        return has_keyword or has_soft_phrase
+        text_lower = text.lower()
+        matched_keywords = [w for w in self.disaster_keywords if w in text_lower]
+        return len(matched_keywords) > 0
 
     def predict(self, text):
         if not text:
@@ -105,7 +119,9 @@ class ModelLoader:
         if not self._has_disaster_signal(text):
             return {
                 "label":      "OOD",
-                "confidence": None,  # rule-based gate, not a model probability — don't fake precision
+                "confidence": 0.0,  # exact match to notebooks (text_analysis.ipynb,
+                                    # Multimodal_Fusion__4_.ipynb) — rule-based gate,
+                                    # reported as 0.0 confidence, not a model probability
                 "xai": {
                     "explanation":  "The text is unrelated to any crisis or disaster domain.",
                     "text_weights": ["ANALYSIS-COMPLETE"]
@@ -121,7 +137,12 @@ class ModelLoader:
 
             with torch.no_grad():
                 outputs = self.model(**inputs)
-                probs   = torch.softmax(outputs.logits, dim=1)[0]
+                logits  = outputs.logits
+                # Temperature scaling (T=1.3) — exact match to
+                # text_analysis.ipynb's test_my_text(): reduces
+                # overconfidence in the reported probability without
+                # changing the argmax prediction itself.
+                probs   = torch.softmax(logits / 1.3, dim=1)[0]
 
             # Model is a strict binary classifier: 0=Non-Informative, 1=Informative.
             # (Confirmed by class weights in training_summary.json — class 0 has
@@ -140,14 +161,16 @@ class ModelLoader:
             }[final_label]
 
         else:
-            # Model not loaded — neutral fallback
+            # Model not loaded — genuinely unknown, NOT the same as OOD.
+            # Use None (not 0) so this can't be misread as "0% confidence
+            # Non-Informative" — we have no real signal at all here.
             final_label      = "Non-Informative"
-            final_confidence = 0.5
+            final_confidence = None
             explanation      = "Model loading failed, using fallback."
 
         return {
             "label":      final_label,
-            "confidence": round(float(final_confidence), 3),
+            "confidence": round(float(final_confidence), 3) if final_confidence is not None else None,
             "xai": {
                 "explanation":  explanation,
                 "text_weights": ["ANALYSIS-COMPLETE"]
