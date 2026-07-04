@@ -6,21 +6,28 @@ import numpy as np
 class XAIEngine:
     # Token count scales with input length instead of a fixed number: short
     # captions (tweets, one-liners) get a small, selective set of top words;
-    # longer disaster reports (100-200+ words) get more tokens so important
-    # information isn't cut off. Bounded between MIN and MAX so it's never
-    # too sparse (short text) or too cluttered (very long text).
+    # longer disaster reports get more tokens so important information isn't
+    # cut off. Bounded between MIN and MAX.
+    #
+    # IMPORTANT: the RoBERTa classifier itself only ever sees the first ~128
+    # tokens (~100-110 words) of any input — model_service.py tokenizes with
+    # max_length=128, truncation=True. Words beyond that never influence the
+    # actual verdict, so scaling tokens shown past that point would explain
+    # words the model never looked at. MAX_TOKENS/ratio are tuned to reach
+    # their ceiling right around that ~100-110 word mark, not beyond it.
     MIN_TOKENS = 5
-    MAX_TOKENS = 15
-    TOKENS_PER_WORD = 0.1  # roughly 1 token shown per 10 input words
+    MAX_TOKENS = 20
+    TOKENS_PER_WORD = 0.15  # roughly 1 token shown per ~7 input words
 
     def _top_n_for(self, word_count):
         return max(self.MIN_TOKENS, min(self.MAX_TOKENS, round(word_count * self.TOKENS_PER_WORD)))
 
-    # SHAP text explainer gets noticeably slower (and RoBERTa truncates
-    # anyway past its max length) on very long inputs. Capping the words fed
-    # into attribution keeps analysis responsive without losing accuracy —
-    # the model's own prediction already only "sees" roughly this much text.
-    MAX_ATTRIBUTION_WORDS = 150
+    # SHAP text explainer gets noticeably slower on very long inputs, and
+    # RoBERTa truncates at max_length=128 tokens anyway (~110 words) in
+    # model_service.py — words beyond that never influence the verdict.
+    # Capped here to match that real window so SHAP isn't spending time
+    # analyzing words the model never saw.
+    MAX_ATTRIBUTION_WORDS = 110
 
     def __init__(self, text_model=None, image_model=None, tokenizer=None, background_tensor=None):
         self.text_model  = text_model
