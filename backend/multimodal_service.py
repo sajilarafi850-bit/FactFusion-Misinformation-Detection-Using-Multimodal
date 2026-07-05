@@ -115,8 +115,8 @@ class MultimodalService:
             ToTensorV2()
         ])
         
-        self.serpapi_key = os.environ.get('SERPAPI_KEY') or "ea67bafde46f86b4ee7b9a14ed018040c61b2514acb6c05872c771cf9f4c7594"
-
+        self.serpapi_key = os.environ.get('SERPAPI_KEY')
+        
     def _generate_clip_heatmap(self, image_path, num_patches=7):
         """
         Generate a pseudo-heatmap by scoring image patches with CLIP for disaster content.
