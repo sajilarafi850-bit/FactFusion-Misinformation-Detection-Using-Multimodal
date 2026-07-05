@@ -100,13 +100,20 @@ class ModelLoader:
             self.model = None
 
     def _has_disaster_signal(self, text):
-        """Domain gate — exact port of text_analysis.ipynb's test_my_text()
-        keyword check: `matched_keywords = [w for w in CRISIS_KEYWORDS if w in
-        text_lower]`. This is a plain substring match (NOT whole-word), same
-        as the notebook the model was validated against.
+        """Domain gate — whole-word keyword match using regex word
+        boundaries. Originally a plain substring match (ported directly
+        from text_analysis.ipynb's test_my_text()), which caused false
+        positives from keywords embedded inside unrelated words (e.g.
+        'war' matching inside 'warmth' or 'forward', 'aid' matching inside
+        'said' or 'paid'). Fixed to require whole-word matches instead.
+        `re.escape()` keeps multi-word keywords (e.g. 'flash flood') safe
+        as literal phrases.
         """
         text_lower = text.lower()
-        matched_keywords = [w for w in self.disaster_keywords if w in text_lower]
+        matched_keywords = [
+            w for w in self.disaster_keywords
+            if re.search(r'\b' + re.escape(w) + r'\b', text_lower)
+        ]
         return len(matched_keywords) > 0
 
     def predict(self, text):
